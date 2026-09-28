@@ -157,3 +157,16 @@ class AnalyticsPageInjectionTests(TestCase):
         # json.dumps 把 < > 转成 \u003C \u003E（大小写都见过，别把断言绑死在一种上）
         self.assertRegex(html, r'\\u003[cC]/script', 'JSON 块里应看到被转义的尖括号')
         self.assertEqual(html.count('alert(1)</script>'), 0, '出现了可执行的脚本闭合拼接')
+
+    def test_page_script_is_not_truncated_by_nested_tags(self):
+        """页面脚本必须完整：嵌套的 </script> 会把 JS 就地截断。
+
+        实测踩过：把 json_script 写进 <script> 块里，浏览器解析到它输出的
+        </script> 就结束外层脚本，之后的所有图表函数集体失效（分析页整页空白图）。
+        """
+        import re
+        html = self.client.get('/analytics/').content.decode('utf-8')
+        code = '\n'.join(re.findall(r'<script>(.*?)</script>', html, re.S))
+        for fn in ('function showTab', 'function runAnomaly',
+                   'function runForecast', 'function runCorr', 'function runMine'):
+            self.assertIn(fn, code, f'{fn} 不在任何脚本块里——脚本被嵌套标签截断了')

@@ -90,6 +90,10 @@
     </table>
   </div>
 </div>
+
+{# 指标目录喂给页面脚本用。json_script 会自己输出 </script>，
+   所以必须待在脚本块之外——放进去会把整段 JS 就地截断。 #}
+{{ catalog|json_script:"metric-catalog" }}
 {% endblock %}
 
 {% block scripts %}
@@ -108,10 +112,7 @@
     });
   }
 
-  // 指标 key → 中文短名（注册表标签去掉单位），让矩阵轴标签读得懂。
-  // 用 json_script 而不是把 catalog 拼进 JS 字面量：自定义指标名可由上报接口写入，
-  // 走 JSON 序列化才不用担心引号与 </script> 这类破坏脚本的东西。
-  {{ catalog|json_script:"metric-catalog" }}
+  // 指标 key → 中文短名（注册表标签去掉单位），让矩阵轴标签读得懂
   var METRIC_LABELS = {};
   try {
     (JSON.parse(document.getElementById('metric-catalog').textContent) || [])

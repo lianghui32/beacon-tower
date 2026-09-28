@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}故障演练 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>故障演练控制台</h1>
+  <span class="desc">给观测平台制造真实数据：慢请求 / 错误 / N+1 / 日志风暴 / CPU 抬升</span>
+</div>
+
+<div class="card">
+  <h2>怎么验证</h2>
+  <p class="muted" style="line-height:1.9;">
+    点下方任意按钮触发一种"故障"，然后到对应模块看数据变化：
+    慢请求 → <a href="/monitor/apm/">APM</a> 与 <a href="/alerts/events/">告警</a>；
+    错误 → <a href="/monitor/apm/">APM 错误率</a> + <a href="/logs/">日志</a>（django.request 自动落库）；
+    N+1 → <a href="/monitor/apm/database/">数据库分析</a>；
+    日志风暴 → <a href="/logs/">日志查询</a> 与 <a href="/analytics/">日志挖掘</a>；
+    CPU 空转 → <a href="/hosts/">主机监控</a>。
+  </p>
+</div>
+
+<div class="grid3">
+  {% for item in drills %}
+  <div class="card">
+    <h2>{{ item.title }}</h2>
+    <p class="muted" style="min-height:60px;">{{ item.desc }}</p>
+    <button class="btn" onclick="runChaos('{{ item.url }}', this)">触发</button>
+    <span class="muted" id="st-{{ forloop.counter }}" style="margin-left:10px;"></span>
+  </div>
+  {% endfor %}
+</div>
+{% include "rum_snippet.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function runChaos(url, btn) {
+    var st = btn.nextElementSibling;
+    st.textContent = '执行中…';
+    // 演练端点要求 POST + CSRF（防爬虫/预取误触发）
+    var fd = new FormData();
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch(url, { method: 'POST', body: fd })
+      .then(function (r) {
+        return r.json().catch(function () { return { status: r.status }; });
+      })
+      .then(function (d) {
+        if (d.throttled) { st.textContent = '⏳ 演练过于频繁，请 15 秒后再试'; return; }
+        st.textContent = '✓ 已执行' + (d.status ? '（HTTP ' + d.status + '）' : '') + '，稍等几秒去看数据';
+      })
+      .catch(function () { st.textContent = '✓ 已执行（连接被 500 中断，属预期）'; });
+  }
+</script>
+{% endblock %}

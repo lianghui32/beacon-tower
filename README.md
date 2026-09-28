@@ -6,7 +6,7 @@
 [![CI](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2-44B78B?logo=django&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-119%20passing-2EA043)
+![Tests](https://img.shields.io/badge/tests-121%20passing-2EA043)
 ![Docker](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -357,7 +357,7 @@ scrape_configs:
 6. **问题版/优化版同框对比**（继承自前身项目）：同一论坛页面的两种实现，页面底部实时显示 SQL 次数与耗时，配合压测输出量化对比。
 7. **运维闭环延伸到"机器本身"**：巡检给出健康评分与容量耗尽预测，自愈执行白名单处置，清理加速中心做磁盘分析/垃圾清理/内存整理——监控不止于"看"，还能"治"。
 8. **安全工程贯穿全程**：四类对手威胁模型 + 三轮红队审查闭环（每轮发现→修复→回归实测），安全白皮书（SECURITY.md）记录全部防护设计与验证方法，可复现、可审计。
-9. **工程化成熟度**：119 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
+9. **工程化成熟度**：121 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
    Docker Compose 三角色生产编排（web/worker/db 分离）、后台任务租约选主（多副本只跑一份，持有者宕机自动接管）、
    采集写路径与请求路径解耦（批量缓冲 + 丢弃计数自观测 + 退出排空）、
    W3C Trace Context 跨服务链路语义、告警 for-duration/恢复迟滞/静默等生产语义、
@@ -483,7 +483,7 @@ systemctl enable --now beacon.service beacon-worker.service
 ## 十六、测试与 CI
 
 ```bash
-python manage.py test          # 119 个用例，SQLite 内存库，无需外部服务
+python manage.py test          # 121 个用例，SQLite 内存库，无需外部服务
 python -m ruff check .         # 静态检查（ruff.toml）
 ```
 

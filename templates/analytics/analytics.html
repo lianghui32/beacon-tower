@@ -91,8 +91,11 @@
   </div>
 </div>
 
-{# 指标目录喂给页面脚本用。json_script 会自己输出 </script>，
-   所以必须待在脚本块之外——放进去会把整段 JS 就地截断。 #}
+{% comment %}
+指标目录喂给页面脚本用。json_script 会自己输出结束标签，所以必须待在脚本块之外——
+放进去会被 HTML 解析器当成外层脚本的结尾，整段 JS 就地截断。
+注意：Django 的 {# #} 只支持单行，跨行写会变成普通文本直接渲染到页面上（实测踩过）。
+{% endcomment %}
 {{ catalog|json_script:"metric-catalog" }}
 {% endblock %}
 

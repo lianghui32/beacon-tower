@@ -515,6 +515,12 @@ class RouteSmokeTests(TestCase):
     """
 
     def _all_routes(self):
+        """产出 (路径, 是否静态路由)。
+
+        静态=原始路由里没有 <pk> 之类的占位、也不是 admin 的 (?P<...>) 正则。
+        只有静态路由才该断言"不该 404"：详情页在空库里 404 是对的，
+        而 (?P<...>) 被字符串替换后拼出来的是垃圾路径，本来就不存在。
+        """
         import re
 
         from django.urls import get_resolver
@@ -530,8 +536,11 @@ class RouteSmokeTests(TestCase):
         for route in walk(get_resolver().url_patterns):
             path = re.sub(r'<(?:int|slug|str):(\w+)>', '1', route)
             path = re.sub(r'<(?:[^:<>]+:)?(\w+)>', '1', path)
-            if '<' not in path:
-                yield path
+            if '<' in path:
+                continue
+            # 必须带前导斜杠：Client.get('analytics/') 会被 urlsplit 处理成
+            # /analytics 之外的怪路径（实测 404），整站冒烟会退化成"全部 404 也算通过"
+            yield '/' + path.lstrip('/'), ('(?P' not in path and route == path)
 
     def test_every_get_route_renders_without_server_error(self):
         from django.contrib.auth.models import User
@@ -539,17 +548,29 @@ class RouteSmokeTests(TestCase):
         User.objects.create_superuser('crawler', '', 'crawler-pass-9527')
         self.client.force_login(User.objects.get(username='crawler'))
         bad = []
+        notfound = []
+        leaked = []
         count = 0
-        for path in self._all_routes():
+        for path, is_static in self._all_routes():
             count += 1
             try:
                 r = self.client.get(path)
                 if r.status_code >= 500:
                     bad.append((path, r.status_code))
+                elif r.status_code == 404 and is_static:
+                    notfound.append(path)
+                elif r.status_code == 200 and 'html' in r.get('Content-Type', ''):
+                    # 未渲染的模板标签漏到页面上（如跨行 {# #} 不是合法注释）
+                    body = r.content.decode('utf-8', 'replace')
+                    for token in ('{%', '{#'):
+                        if token in body:
+                            leaked.append((path, token))
             except Exception as e:  # noqa: B902 — 视图/模板抛错必须在此暴露
                 bad.append((path, repr(e)[:120]))
         self.assertGreater(count, 50, '路由解析异常：可寻址路由数量过少')
         self.assertEqual(bad, [], f'以下路由 5xx/异常: {bad}')
+        self.assertEqual(notfound, [], f'以下静态路由 404（路径拼接可疑）: {notfound}')
+        self.assertEqual(leaked, [], f'以下页面漏出了未渲染的模板标签: {leaked}')
 
 
 class BenchmarkSuiteTests(TestCase):

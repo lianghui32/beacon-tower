@@ -17,6 +17,16 @@
 > 内置**整站登录认证**与**接入令牌**，支持通过自研 Agent 接入**多台服务器**。
 > 开发端口：**8014**。
 
+### 效果预览（截图取自线上实例）
+
+| 监控总览 | APM 接口分析 |
+|---|---|
+| ![监控总览](docs/screenshots/dashboard.png) | ![APM](docs/screenshots/apm.png) |
+| **调用链瀑布图** | **相关性分析矩阵** |
+| ![调用链](docs/screenshots/trace.png) | ![相关性](docs/screenshots/analytics_corr.png) |
+| **主机监控（psutil 真实读数）** | **日志查询** |
+| ![主机](docs/screenshots/host.png) | ![日志](docs/screenshots/logs.png) |
+
 ## 一、项目背景（从"性能监控"到"可观测平台"）
 
 本项目前身是一个 Django 性能监控与优化平台（内置问题论坛 + AST 诊断），解决的是

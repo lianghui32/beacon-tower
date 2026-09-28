@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}清理加速 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>清理加速中心</h1>
+  <span class="desc">磁盘空间分析 · 垃圾清理 · 内存整理（全部白名单化，执行留痕可审计）</span>
+</div>
+
+<div class="card">
+  <h2>① 磁盘空间分析 <span class="muted">找出空间都去哪了</span></h2>
+  <p style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    {% for s in scopes %}
+    <button class="btn gray sm" onclick="scanDisk('{{ s.key }}', '')">{{ s.label }}</button>
+    {% endfor %}
+    <input type="text" id="disk-path" placeholder="或输入自定义绝对路径，如 D:\Downloads"
+           style="width:220px;">
+    <button class="btn sm" onclick="scanDisk('', document.getElementById('disk-path').value)">分析该路径</button>
+  </p>
+  <p class="muted" id="disk-summary">点击上方按钮开始分析（整盘扫描可能需要几十秒）。</p>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:320px;">
+      <h3 style="font-size:13px;color:var(--muted);">占用最大的目录</h3>
+      <table><tbody id="disk-dirs"><tr><td class="muted">尚未分析</td></tr></tbody></table>
+    </div>
+    <div style="flex:1;min-width:320px;">
+      <h3 style="font-size:13px;color:var(--muted);">最大的文件</h3>
+      <table><tbody id="disk-files"><tr><td class="muted">尚未分析</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>② 垃圾清理 <span class="muted">先预估后执行 · 只清理白名单目录</span></h2>
+  <table>
+    <thead><tr><th>清理项</th><th>可回收</th><th>文件数</th><th>说明</th><th style="width:170px;">操作</th></tr></thead>
+    <tbody>
+      {% for it in items %}
+      <tr>
+        <td><b>{{ it.label }}</b></td>
+        <td><span class="tag ok" id="est-mb-{{ it.key }}">{{ it.mb }} MB</span></td>
+        <td id="est-files-{{ it.key }}">{{ it.files }}</td>
+        <td class="muted" style="font-size:12px;" id="est-detail-{{ it.key }}">{{ it.detail }}</td>
+        <td>
+          <button class="btn gray sm" onclick="estimate('{{ it.key }}')">重新预估</button>
+          <button class="btn danger sm" onclick="clean('{{ it.key }}', this)">清理</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:8px;">
+    安全边界：临时文件仅清理 24 小时未修改的；__pycache__ 与 pip 缓存可随时重建；
+    平台数据按保留期清理后执行 <code class="inline">VACUUM</code> 真正回收磁盘空间；
+    从不触碰业务目录与系统目录。
+  </p>
+</div>
+
+<div class="card">
+  <h2>③ 内存加速
+    <span class="muted" id="mem-summary">
+      {% if mem.available %}已用 {{ mem_used_mb }} / {{ mem_total_mb }} MB（{{ mem.percent }}%）{% endif %}
+    </span>
+    <button class="btn sm" style="float:right;" onclick="trimMemory(this)"
+            {% if not is_windows %}disabled title="仅支持 Windows"{% endif %}>⚡ 一键内存整理</button>
+  </h2>
+  <p class="muted" id="trim-result" style="min-height:20px;">
+    {% if not is_windows %}内存整理当前仅支持 Windows 平台。{% else %}对当前用户进程修剪工作集（把不活跃内存页换出），系统进程与平台自身不受影响。释放量为估算值。{% endif %}
+  </p>
+  <table>
+    <thead><tr><th>PID</th><th>进程</th><th>内存</th><th>用户</th><th></th></tr></thead>
+    <tbody id="proc-body"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>④ 执行记录</h2>
+  <table>
+    <thead><tr><th>时间</th><th>清理项</th><th>结果</th><th>释放</th><th>明细</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td>{{ r.created_at|date:"m-d H:i" }}</td>
+        <td>{{ r.get_item_display }}</td>
+        <td>{% if r.ok %}<span class="tag ok">成功</span>{% else %}<span class="tag high">失败</span>{% endif %}</td>
+        <td><b>{{ r.freed_bytes|floatformat:0 }}</b> B / {{ r.files }} 文件</td>
+        <td class="muted" style="font-size:12px;">{{ r.detail|truncatechars:90 }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">暂无清理记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function fd() {
+    var f = new FormData();
+    f.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    return f;
+  }
+
+  // ---------- 磁盘空间分析 ----------
+  function scanDisk(scope, customPath) {
+    var sum = document.getElementById('disk-summary');
+    sum.textContent = '扫描中，请稍候…（大目录可能需要几十秒）';
+    var q = scope ? ('scope=' + encodeURIComponent(scope))
+                  : ('path=' + encodeURIComponent(customPath));
+    obsGet('/cleaner/api/disk/?' + q).then(function (d) {
+      sum.innerHTML = '<b>' + esc(d.root) + '</b> · 扫描 ' + d.scanned_files + ' 个文件'
+        + (d.truncated ? ' <span class="tag mid">已达到扫描时限，结果为部分统计</span>' : '')
+        + (d.drive ? ' · 磁盘剩余 <b>' + d.drive.free_mb + ' / ' + d.drive.total_mb + ' MB</b>' : '');
+      document.getElementById('disk-dirs').innerHTML = d.top_dirs.length
+        ? d.top_dirs.map(function (r) {
+            return '<tr><td style="width:90px;"><b>' + r.size_mb + ' MB</b></td>'
+              + '<td style="font-size:12px;"><code class="inline">' + esc(r.path) + '</code></td>'
+              + '<td style="width:80px;" class="muted">' + r.files + ' 文件</td></tr>';
+          }).join('') : '<tr><td class="muted">无数据</td></tr>';
+      document.getElementById('disk-files').innerHTML = d.top_files.length
+        ? d.top_files.map(function (r) {
+            return '<tr><td style="width:90px;"><b>' + r.size_mb + ' MB</b></td>'
+              + '<td style="font-size:12px;"><code class="inline">' + esc(r.path) + '</code></td></tr>';
+          }).join('') : '<tr><td class="muted">无数据</td></tr>';
+    }).catch(function () { sum.textContent = '扫描失败（路径不存在或无权限）'; });
+  }
+
+  // ---------- 垃圾清理 ----------
+  function estimate(item) {
+    var el = document.getElementById('est-mb-' + item);
+    el.textContent = '扫描中…';
+    obsGet('/cleaner/api/estimate/' + item + '/').then(function (d) {
+      el.textContent = d.mb + ' MB';
+      document.getElementById('est-files-' + item).textContent = d.files;
+      document.getElementById('est-detail-' + item).textContent = d.detail;
+    }).catch(function () { el.textContent = '预估失败'; });
+  }
+
+  function clean(item, btn) {
+    var label = btn.closest('tr').querySelector('b').textContent;
+    if (!confirm('确认清理「' + label + '」？此操作不可撤销（已留痕审计）。')) return;
+    btn.disabled = true; btn.textContent = '清理中…';
+    fetch('/cleaner/api/clean/' + item + '/', { method: 'POST', body: fd() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        btn.disabled = false; btn.textContent = '清理';
+        if (d.ok) {
+          document.getElementById('est-mb-' + item).textContent = '0 MB';
+          document.getElementById('est-files-' + item).textContent = '0';
+          alert('清理完成：释放 ' + d.freed_mb + ' MB，耗时 ' + d.duration_ms + 'ms\n' + d.detail);
+          setTimeout(function () { location.reload(); }, 800);
+        } else {
+          alert('清理失败：' + d.error);
+        }
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = '清理'; alert('请求失败'); });
+  }
+
+  // ---------- 内存加速 ----------
+  function loadProcs() {
+    obsGet('/cleaner/api/processes/').then(function (d) {
+      document.getElementById('mem-summary').textContent =
+        '已用 ' + d.used_mb + ' / ' + d.total_mb + ' MB（' + d.percent + '%）';
+      document.getElementById('proc-body').innerHTML = d.top.map(function (p) {
+        return '<tr><td>' + p.pid + '</td>'
+          + '<td><code class="inline">' + esc(p.name) + '</code></td>'
+          + '<td><b>' + p.rss_mb + ' MB</b></td>'
+          + '<td class="muted" style="font-size:12px;">' + esc(p.user || '-') + '</td>'
+          + '<td>' + (p.system ? '<span class="tag gray">系统/平台</span>' : '') + '</td></tr>';
+      }).join('');
+    }).catch(function () {
+      document.getElementById('proc-body').innerHTML =
+        '<tr><td colspan="5" class="muted">进程列表不可用（未安装 psutil）</td></tr>';
+    });
+  }
+  loadProcs();
+
+  function trimMemory(btn) {
+    if (!confirm('开始内存整理？将修剪当前用户进程的工作集（系统进程与平台自身不受影响）。')) return;
+    btn.disabled = true; btn.textContent = '整理中…';
+    var el = document.getElementById('trim-result');
+    el.textContent = '正在整理，请稍候…';
+    fetch('/cleaner/api/trim/', { method: 'POST', body: fd() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        btn.disabled = false; btn.textContent = '⚡ 一键内存整理';
+        el.innerHTML = d.ok
+          ? '<span class="tag ok">完成</span> 释放估算 <b>' + d.freed_mb + ' MB</b>（' + esc(d.detail) + '）'
+          : '<span class="tag mid">未执行</span> ' + esc(d.detail || d.error);
+        loadProcs();
+      })
+      .catch(function () { btn.disabled = false; btn.textContent = '⚡ 一键内存整理'; el.textContent = '请求失败'; });
+  }
+</script>
+{% endblock %}

@@ -13,6 +13,7 @@ monitor/buffer.py — 请求指标批量缓冲（APM 热路径与写库解耦）
 - 指标可见延迟最多 FLUSH_SEC 秒（大盘/告警读的是库，不是实时总线）；
 - 队列满时丢新点并计数：观测数据可以采样，采集不允许反压业务；
   丢弃数经 /metrics 的 obs_metric_buffer_dropped_total 暴露；
+- 后台落库遇瞬时故障（单写者锁、连接抖动）先重试 2 次，仍失败才整批丢弃并计数；
 - 进程被 SIGKILL 时缓冲区里未落库的点会丢（atexit 只覆盖正常退出）。
 
 `OBSERVABILITY['METRIC_BUFFER_ENABLED']` 为假时 submit() 直接同步写库，
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_BATCH_SIZE = 200
 DEFAULT_FLUSH_SEC = 1.0
 DEFAULT_QUEUE_SIZE = 20000
+
+# 后台线程落库遇到瞬时故障（单写者锁、连接抖动）时的重试预算：最多 1+2 次尝试
+WRITE_RETRIES = 2
+WRITE_RETRY_SEC = 0.05
 
 # 队列里放的是构造 RequestMetric 的字段字典（请求线程不实例化模型，省一次开销）
 _q = queue.Queue()
@@ -82,11 +87,13 @@ def stats():
                 flush_sec=float(_cfg('METRIC_BUFFER_FLUSH_SEC', DEFAULT_FLUSH_SEC)))
 
 
-def write_rows(rows):
+def write_rows(rows, retries=0):
     """把一批字段字典写入库，返回落库条数。
 
-    失败时整批丢弃并计数——采集组件不能因为自己写不进去而把调用方拖垮；
-    同时关闭本线程连接，下一批自动重连（数据库重启/连接失效的场景）。
+    `retries` > 0 时，失败先重试（间隔逐次翻倍）再放弃——SQLite 的单写者锁
+    "database table is locked" 属于典型瞬时故障，让整批点因为一次锁竞争蒸发
+    说不过去。最终仍写不进去才整批丢弃并计数：采集组件不能因为自己写不进去
+    而把调用方拖垮。失败后关闭本线程连接，下一批自动重连（数据库重启/连接失效）。
     """
     from .models import RequestMetric
 
@@ -94,21 +101,27 @@ def write_rows(rows):
         return 0
     objs = [RequestMetric(**r) for r in rows]
     batch_size = max(1, int(_cfg('METRIC_BUFFER_BATCH_SIZE', DEFAULT_BATCH_SIZE)))
-    try:
-        with transaction.atomic():
-            RequestMetric.objects.bulk_create(objs, batch_size=batch_size)
-        _stats['written'] += len(objs)
-        _stats['batches'] += 1
-        return len(objs)
-    except Exception:
-        _stats['errors'] += 1
-        _stats['dropped'] += len(objs)
-        logger.exception('RequestMetric 批量落库失败，本批 %d 条已丢弃', len(objs))
+    for attempt in range(retries + 1):
         try:
-            connection.close()
-        except Exception:
-            pass
-        return 0
+            with transaction.atomic():
+                RequestMetric.objects.bulk_create(objs, batch_size=batch_size)
+            _stats['written'] += len(objs)
+            _stats['batches'] += 1
+            return len(objs)
+        except Exception as exc:
+            if attempt < retries:
+                logger.warning('RequestMetric 批量落库失败（第 %d/%d 次尝试）：%s',
+                               attempt + 1, retries + 1, exc)
+                time.sleep(WRITE_RETRY_SEC * (2 ** attempt))
+                continue
+            _stats['errors'] += 1
+            _stats['dropped'] += len(objs)
+            logger.exception('RequestMetric 批量落库失败，本批 %d 条已丢弃', len(objs))
+    try:
+        connection.close()
+    except Exception:
+        pass
+    return 0
 
 
 def submit(payload):
@@ -154,14 +167,14 @@ def _flusher_loop():
     deadline = time.monotonic() + flush_sec
     while not _stop.is_set():
         if batch and (len(batch) >= batch_size or time.monotonic() >= deadline):
-            write_rows(batch)
+            write_rows(batch, retries=WRITE_RETRIES)
             batch = []
             deadline = time.monotonic() + flush_sec
         try:
             batch.append(_q.get(timeout=0.2))  # 短等待，停服时能尽快退出
         except queue.Empty:
             continue
-    write_rows(batch)
+    write_rows(batch, retries=WRITE_RETRIES)
 
 
 def start():

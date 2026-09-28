@@ -77,6 +77,13 @@
 承诺钉成回归测试。丢弃与积压计数经 `/metrics` 暴露
 （`obs_metric_buffer_dropped_total` / `obs_metric_buffer_pending`），采集不会静默丢数据。
 
+写库本身失败（单写者锁、数据库重启导致连接失效）是另一条丢点路径：后台线程先按
+0.05s、0.1s 退避重试两次，仍失败才整批丢弃并计入 `dropped`/`errors`。这一条不是设计出来的，
+是 Linux CI 上"提交 7 条只落库 5 条"的偶发失败暴露的——第一批撞锁被整批丢弃。
+现在它由 `MetricBufferThreadTests::test_flusher_retries_through_transient_lock`
+（注入一次失败，断言 7 条全落库、丢弃计数不变）与
+`MetricBufferTests` 的两条重试/重试用尽用例钉住；把重试关掉，前一条就会以 `2 != 7` 失败。
+
 调参环境变量：`OBS_METRIC_BUFFER`（0 关闭）、`OBS_METRIC_BUFFER_BATCH`、
 `OBS_METRIC_BUFFER_FLUSH_SEC`、`OBS_METRIC_BUFFER_QUEUE_SIZE`。
 

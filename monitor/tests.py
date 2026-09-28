@@ -290,6 +290,58 @@ class MetricBufferTests(TestCase):
                         '缓冲关闭时必须立即落库（管理命令/测试的可见性语义）')
 
     @override_settings(OBSERVABILITY=_obs(METRIC_BUFFER_ENABLED=True))
+    def test_transient_write_failure_retries_without_losing_batch(self):
+        """单写者锁这类瞬时故障应在重试预算内消化：点要落库，且不该记成丢弃。"""
+        from unittest import mock
+
+        from django.db.utils import OperationalError
+
+        from monitor.models import RequestMetric
+        real = RequestMetric.objects.bulk_create
+        attempts = {'n': 0}
+
+        def flaky(_mgr, objs, **kw):
+            attempts['n'] += 1
+            if attempts['n'] == 1:
+                raise OperationalError('database table is locked')
+            return real(objs, **kw)
+
+        dropped = self.buffer.stats()['dropped']
+        with mock.patch.object(type(RequestMetric.objects), 'bulk_create', flaky):
+            landed = self.buffer.write_rows([self._payload('/buf-retry/')], retries=2)
+        self.assertEqual(landed, 1)
+        self.assertEqual(attempts['n'], 2, '第一次失败，第二次应重试成功')
+        self.assertEqual(self.buffer.stats()['dropped'], dropped, '重试成功不该记丢弃')
+        self.assertEqual(RequestMetric.objects.filter(path='/buf-retry/').count(), 1)
+
+    @override_settings(OBSERVABILITY=_obs(METRIC_BUFFER_ENABLED=True))
+    def test_persistent_write_failure_drops_batch_once_after_retries(self):
+        """重试用尽才丢：丢弃按整批条数计一次，不能每次尝试都累加一遍。"""
+        from unittest import mock
+
+        from django.db.utils import OperationalError
+
+        from monitor.models import RequestMetric
+        attempts = {'n': 0}
+
+        def always_fails(_mgr, objs, **kw):
+            attempts['n'] += 1
+            raise OperationalError('database table is locked')
+
+        before = self.buffer.stats()
+        rows = [self._payload(f'/buf-dead-{i}/') for i in range(3)]
+        # connection 换成 mock：失败路径会 close()，测试库是内存库，真关掉会连带炸掉后续用例
+        with mock.patch.object(type(RequestMetric.objects), 'bulk_create', always_fails), \
+                mock.patch('monitor.buffer.connection'):
+            landed = self.buffer.write_rows(rows, retries=2)
+        after = self.buffer.stats()
+        self.assertEqual(landed, 0)
+        self.assertEqual(attempts['n'], 3, '1 次初始 + 2 次重试')
+        self.assertEqual(after['dropped'] - before['dropped'], 3)
+        self.assertEqual(after['errors'] - before['errors'], 1, '失败批次按批计一次')
+        self.assertFalse(RequestMetric.objects.filter(path__startswith='/buf-dead-').exists())
+
+    @override_settings(OBSERVABILITY=_obs(METRIC_BUFFER_ENABLED=True))
     def test_middleware_request_visible_after_flush(self):
         """走完整中间件链路：响应返回时点还在队列里，flush 之后才落库且 span/trace 完整"""
         from monitor.models import RequestMetric
@@ -364,6 +416,52 @@ class MetricBufferThreadTests(TransactionTestCase):
         self.assertEqual(seen, 7, 'flusher 线程应在刷新周期内自动批量落库')
         used = self.buffer.stats()['batches'] - batches_before
         self.assertLess(used, 7, f'7 条点用了 {used} 批，未体现批量写入')
+
+    @override_settings(OBSERVABILITY=_obs(METRIC_BUFFER_ENABLED=True,
+                                         METRIC_BUFFER_FLUSH_SEC=0.2,
+                                         METRIC_BUFFER_BATCH_SIZE=5))
+    def test_flusher_retries_through_transient_lock(self):
+        """Linux CI 上真丢过 2 条：flusher 的第一批撞上共享内存库的表锁，整批被丢。
+        重试预算要把它消化掉——7 条点最后必须全在库里，且一条都不记丢弃。"""
+        import time as _time
+        from unittest import mock
+
+        from django.db import connection
+        from django.db.utils import OperationalError
+
+        from monitor.models import RequestMetric
+        real = RequestMetric.objects.bulk_create
+        gate = {'calls': 0, 'failed': 0}
+
+        def flaky(_mgr, objs, **kw):
+            gate['calls'] += 1
+            if gate['calls'] == 1:      # 只让第一批失败，模拟瞬时锁
+                gate['failed'] += 1
+                raise OperationalError('database table is locked')
+            return real(objs, **kw)
+
+        dropped_before = self.buffer.stats()['dropped']
+        base = {'method': 'GET', 'status_code': 200, 'duration_ms': 12.5,
+                'sql_count': 3, 'trace_id': 'ab' * 16}
+        with mock.patch.object(type(RequestMetric.objects), 'bulk_create', flaky):
+            self.assertTrue(self.buffer.start())
+            for i in range(7):
+                self.buffer.submit(dict(base, path=f'/buf-lock/{i}'))
+            deadline = _time.monotonic() + 10
+            seen = 0
+            while _time.monotonic() < deadline:
+                try:
+                    seen = RequestMetric.objects.filter(path__startswith='/buf-lock/').count()
+                except OperationalError:
+                    seen = -1
+                    connection.close()
+                if seen == 7:
+                    break
+                _time.sleep(0.1)
+        self.assertEqual(gate['failed'], 1, '故障注入没生效，这条用例等于没测')
+        self.assertEqual(seen, 7, '瞬时锁失败不该让任何一条采集点蒸发')
+        self.assertEqual(self.buffer.stats()['dropped'], dropped_before,
+                         '重试成功的批次不应计入丢弃')
 
     @override_settings(OBSERVABILITY=_obs(METRIC_BUFFER_ENABLED=True,
                                          METRIC_BUFFER_FLUSH_SEC=30,

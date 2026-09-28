@@ -6,7 +6,7 @@
 [![CI](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2-44B78B?logo=django&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-122%20passing-2EA043)
+![Tests](https://img.shields.io/badge/tests-125%20passing-2EA043)
 ![Docker](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -95,7 +95,7 @@
 | Web 框架 | Django 5.2 | 核心框架 |
 | 数据库 | SQLite（演示零配置）/ PostgreSQL（生产） | `OBS_DATABASE_URL` 一键切换；线上实例是宿主 PostgreSQL 18 |
 | 应用服务器 | runserver（开发）/ gunicorn（生产） | Docker Compose 编排，或无 Docker 的 systemd 托管（线上实例用的就是这个） |
-| 测试 | Django TestCase × 122 | 算法/脱敏/限速/告警引擎/鉴权/追踪/缓冲/租约/删除边界全覆盖，CI 自动执行 |
+| 测试 | Django TestCase × 125 | 算法/脱敏/限速/告警引擎/鉴权/追踪/缓冲/租约/删除边界全覆盖，CI 自动执行 |
 | CI | GitHub Actions | ruff 静态检查 + 系统检查 + migration 完整性 + 全量测试 |
 | 主机采集 | psutil | 唯一推荐依赖；未安装自动降级为模拟指标 |
 | 图表 | ECharts 5 | **本地自托管**（static/echarts.min.js），无 CDN 依赖 |
@@ -230,8 +230,10 @@ systemd / Windows 计划任务配置示例与安全建议（HTTPS、端口收敛
 后台线程按"攒满 200 条或满 1 秒"一次 `bulk_create` 批量落库——请求线程不再参与
 SQLite 单写者锁竞争，实测 p99 从 2190ms 降到 251ms、QPS +23%（详见
 [docs/BENCHMARK.md](docs/BENCHMARK.md)）。代价是指标可见延迟 ≤1 秒；
-队列满时丢弃并计数，丢弃量经 `/metrics` 的 `obs_metric_buffer_dropped_total` 暴露，
-进程正常退出前排空缓冲区。管理命令与测试里自动退回同步写库，保持"写完即可读"语义。
+队列满时丢弃并计数，丢弃量经 `/metrics` 的 `obs_metric_buffer_dropped_total` 暴露；
+落库批次撞上瞬时故障（单写者锁、连接抖动）先重试 2 次，重试用尽才整批丢弃并计数
+——Linux CI 上真丢过 2 条点，就是这条重试补上的。进程正常退出前排空缓冲区。
+管理命令与测试里自动退回同步写库，保持"写完即可读"语义。
 
 ## 八、演示账号（向他人展示平台）
 
@@ -343,7 +345,7 @@ scrape_configs:
 │   ├── metrics.py              #   Prometheus 文本输出（含采集管道与租约自观测）
 │   ├── diagnoser.py            #   AST 静态诊断引擎（核心创新保留）
 │   ├── workers.py              #   后台线程启动器（幂等）
-│   ├── tests.py                #   链路/门禁/缓冲/租约回归（40 例）
+│   ├── tests.py                #   链路/门禁/缓冲/租约回归（43 例）
 │   └── management/commands/
 │       ├── init_data.py        #   全观测域演示数据种子
 │       ├── obs_workers.py      #   worker 角色（副本数不限，内部选主）
@@ -377,7 +379,7 @@ scrape_configs:
 6. **问题版/优化版同框对比**（继承自前身项目）：同一论坛页面的两种实现，页面底部实时显示 SQL 次数与耗时，配合压测输出量化对比。
 7. **运维闭环延伸到"机器本身"**：巡检给出健康评分与容量耗尽预测，自愈执行白名单处置，清理加速中心做磁盘分析/垃圾清理/内存整理——监控不止于"看"，还能"治"。
 8. **安全工程贯穿全程**：四类对手威胁模型 + 三轮红队审查闭环（每轮发现→修复→回归实测），安全白皮书（SECURITY.md）记录全部防护设计与验证方法，可复现、可审计。
-9. **工程化成熟度**：122 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
+9. **工程化成熟度**：125 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
    Docker Compose 三角色生产编排（web/worker/db 分离）、后台任务租约选主（多副本只跑一份，持有者宕机自动接管）、
    采集写路径与请求路径解耦（批量缓冲 + 丢弃计数自观测 + 退出排空）、
    W3C Trace Context 跨服务链路语义、告警 for-duration/恢复迟滞/静默等生产语义、
@@ -503,7 +505,7 @@ systemctl enable --now beacon.service beacon-worker.service
 ## 十六、测试与 CI
 
 ```bash
-python manage.py test          # 122 个用例，SQLite 内存库，无需外部服务
+python manage.py test          # 125 个用例，SQLite 内存库，无需外部服务
 python -m ruff check .         # 静态检查（ruff.toml）
 ```
 
@@ -517,6 +519,7 @@ python -m ruff check .         # 静态检查（ruff.toml）
   请求上下文日志自动携带 trace_id、按 trace_id 检索日志；
 - **采集缓冲**：入队不入库、flush 后入库、200 条批量无丢行、采集时刻不被落库时刻覆盖、
   队列满丢弃并计数、缓冲关闭退化为同步写、后台线程自动按批落库、
+  落库撞瞬时锁时重试不丢点（重试成功不计丢弃，重试用尽才按整批计一次）、
   退出前排空（用 30 秒刷新周期把这条承诺钉成回归测试）；
 - **租约选主**：独占抢约、续约不换任期、过期可接管且任期 +1、被接管的原持有者必须认输、
   交还后可立即接管、非持有者不执行任务、持有者失效后待命副本接管、

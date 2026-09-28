@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}通知记录 · 告警中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>通知记录</h1>
+  <span class="desc">告警触发 / 恢复时自动产生（站内信 + 模拟 Webhook）</span>
+  <div class="spacer"></div>
+  <a class="btn {% if not channel %}btn{% else %}gray{% endif %} sm" href="/alerts/notifications/">全部</a>
+  <a class="btn {% if channel == '站内信' %}btn{% else %}gray{% endif %} sm" href="/alerts/notifications/?channel=站内信">站内信</a>
+  <a class="btn {% if channel == 'webhook' %}btn{% else %}gray{% endif %} sm" href="/alerts/notifications/?channel=webhook">Webhook</a>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr><th style="width:90px;">渠道</th><th style="width:280px;">标题</th><th>内容</th><th style="width:140px;">时间</th></tr></thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td><span class="tag low">{{ r.channel }}</span></td>
+        <td><b>{{ r.title }}</b></td>
+        <td style="font-size:12px;white-space:pre-wrap;">{{ r.content|truncatechars:220 }}</td>
+        <td>{{ r.created_at|date:"m-d H:i" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4" class="muted">暂无通知（告警触发后自动生成）</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

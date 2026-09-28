@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}告警策略 · 告警中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>告警策略</h1>
+  <span class="desc">自研评估引擎每 {{ alert_interval }} 秒评估一轮（窗口 {{ alert_window }} 分钟均值）</span>
+  <div class="spacer"></div>
+  <button class="btn gray" onclick="evaluateNow()">立即评估一轮</button>
+</div>
+
+<div class="card">
+  <h2>新建策略</h2>
+  <form method="post" action="/alerts/policies/create/" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <label>名称 <input type="text" name="name" required placeholder="如：CPU 过高" style="width:150px;"></label>
+    <label>指标
+      <select name="metric_key" style="min-width:210px;">
+        {% for c in catalog %}<option value="{{ c.key }}">{{ c.label }} · {{ c.key }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><select name="operator"><option value=">">大于</option><option value="<">小于</option></select></label>
+    <label>阈值 <input type="number" name="threshold" step="any" required style="width:100px;"></label>
+    <label title="持续越限 N 分钟才触发（防抖），0=立即触发">持续N分 <input type="number" name="for_minutes" step="any" min="0" value="0" style="width:70px;"></label>
+    <label title="恢复迟滞：指标回到该值的安全侧才算恢复，防阈值附近抖动；留空=条件解除即恢复">恢复阈值 <input type="number" name="resolve_threshold" step="any" style="width:90px;" placeholder="选填"></label>
+    <label>级别
+      <select name="level"><option value="P0">P0 紧急</option><option value="P1">P1 严重</option>
+        <option value="P2" selected>P2 警告</option><option value="提示">提示</option></select>
+    </label>
+    <label>备注 <input type="text" name="note" placeholder="选填" style="width:160px;"></label>
+    <button class="btn" type="submit">+ 创建</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>策略列表（{{ policies|length }} 条）</h2>
+  <table>
+    <thead><tr>
+      <th>级别</th><th>策略名称</th><th>条件</th><th>状态</th><th>备注</th><th style="width:190px;">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for p in policies %}
+      <tr>
+        <td><span class="tag {% if p.level == 'P0' %}p0{% elif p.level == 'P1' %}p1{% elif p.level == 'P2' %}p2{% else %}gray{% endif %}">{{ p.level }}</span></td>
+        <td><b>{{ p.name }}</b></td>
+        <td><code class="inline">{{ p.metric_key }} {{ p.operator }} {{ p.threshold }}</code>
+            {% if p.for_minutes %}<span class="tag gray" title="for-duration 防抖">⏱ {{ p.for_minutes }}分</span>{% endif %}
+            {% if p.resolve_threshold is not None %}<span class="tag gray" title="恢复迟滞">↩ {{ p.resolve_threshold }}</span>{% endif %}
+        </td>
+        <td>{% if p.enabled %}<span class="tag ok">启用</span>{% else %}<span class="tag gray">停用</span>{% endif %}
+            {% if p.silenced_until and p.silenced_until > now %}
+            <span class="tag mid">🔇 至 {{ p.silenced_until|date:"m-d H:i" }}</span>
+            {% endif %}
+            {% if p.enabled and not p.silenced_until and p.breach_since and p.for_minutes %}
+            <span class="tag mid" title="越限观察期内，持续满 {{ p.for_minutes }} 分钟才触发">观察中</span>
+            {% endif %}
+        </td>
+        <td class="muted">{{ p.note }}</td>
+        <td>
+          <form method="post" action="/alerts/policies/{{ p.pk }}/toggle/" style="display:inline;">{% csrf_token %}
+            <button class="btn gray sm">{{ p.enabled|yesno:"停用,启用" }}</button></form>
+          {% if p.silenced_until and p.silenced_until > now %}
+          <form method="post" action="/alerts/policies/{{ p.pk }}/unsilence/" style="display:inline;">{% csrf_token %}
+            <button class="btn gray sm">解除静默</button></form>
+          {% else %}
+          <form method="post" action="/alerts/policies/{{ p.pk }}/silence/" style="display:inline;">{% csrf_token %}
+            <input type="hidden" name="hours" value="2">
+            <button class="btn gray sm" title="静默 2 小时（维护/发版窗口）">🔇 静默2h</button></form>
+          {% endif %}
+          <form method="post" action="/alerts/policies/{{ p.pk }}/delete/" style="display:inline;"
+                onsubmit="return confirm('删除策略 {{ p.name }}？')">{% csrf_token %}
+            <button class="btn danger sm">删除</button></form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="muted">还没有策略，用上方表单创建</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>可用指标（来自指标注册表）</h2>
+  <p class="muted" style="line-height:2;">
+    {% for c in catalog %}<code class="inline">{{ c.key }}</code> {{ c.label }}&nbsp;&nbsp;{% endfor %}
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function evaluateNow() {
+    // fetch 发起的 POST 必须显式携带 CSRF token，否则被中间件 403
+    var fd = new FormData();
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch('/alerts/policies/evaluate/', { method: 'POST', body: fd })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        alert('评估完成：新触发 ' + d.fired + ' 条，恢复 ' + d.recovered + ' 条。');
+        location.reload();
+      })
+      .catch(function (e) {
+        alert('评估请求失败：' + e.message);
+      });
+  }
+</script>
+{% endblock %}

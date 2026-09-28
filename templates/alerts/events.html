@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}告警事件 · 告警中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>告警事件</h1>
+  <span class="desc">
+    {% if firing %}<span class="tag high">{{ firing }} 条触发中</span>{% else %}<span class="tag ok">无触发中告警</span>{% endif %}
+    {% if mttr %}<span class="tag gray">MTTR {{ mttr }} 分钟</span>{% endif %}
+    {% if mtta %}<span class="tag gray">MTTA {{ mtta }} 分钟</span>{% endif %}
+    <span class="muted">（近 7 天均值）</span>
+  </span>
+  <div class="spacer"></div>
+  <a class="btn {% if not status %}btn{% else %}gray{% endif %} sm" href="/alerts/events/">全部</a>
+  <a class="btn {% if status == 'firing' %}btn{% else %}gray{% endif %} sm" href="/alerts/events/?status=firing">触发中</a>
+  <a class="btn {% if status == 'resolved' %}btn{% else %}gray{% endif %} sm" href="/alerts/events/?status=resolved">已恢复</a>
+  <a class="btn gray sm" href="/ops/incidents/">故障单管理</a>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr>
+      <th>级别</th><th>策略</th><th>摘要</th><th>状态</th><th>确认</th>
+      <th>触发时间</th><th>持续(分)</th><th>触发值</th><th style="width:220px;">处置</th>
+    </tr></thead>
+    <tbody>
+      {% for e in events %}
+      <tr>
+        <td><span class="tag {% if e.level == 'P0' %}p0{% elif e.level == 'P1' %}p1{% elif e.level == 'P2' %}p2{% else %}gray{% endif %}">{{ e.level }}</span></td>
+        <td>{{ e.policy.name }}</td>
+        <td style="max-width:360px;">
+          {{ e.summary }}
+          {% if e.handle_note %}<div class="muted" style="font-size:12px;">📝 {{ e.handle_note|truncatechars:80 }}</div>{% endif %}
+        </td>
+        <td>{% if e.status == 'firing' %}<span class="tag high">触发中</span>{% else %}<span class="tag ok">已恢复</span>{% endif %}</td>
+        <td>{% if e.ack_by %}<span class="tag low">{{ e.ack_by }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>{{ e.started_at|date:"m-d H:i" }}</td>
+        <td>{{ e.duration_min }}</td>
+        <td>{{ e.value }}</td>
+        <td>
+          {% if e.status == 'firing' and not e.ack_by %}
+          <form method="post" action="/alerts/events/{{ e.pk }}/ack/" style="display:inline;">{% csrf_token %}
+            <button class="btn sm">确认</button></form>
+          {% endif %}
+          {% if e.incident %}
+          <a class="btn gray sm" href="/ops/incidents/{{ e.incident.pk }}/">故障单#{{ e.incident.pk }}</a>
+          {% endif %}
+          <details style="display:inline-block;">
+            <summary class="btn gray sm" style="list-style:none;">备注</summary>
+            <form method="post" action="/alerts/events/{{ e.pk }}/note/" style="margin-top:6px;">{% csrf_token %}
+              <input type="text" name="note" placeholder="处理备注" style="width:160px;">
+              <button class="btn gray sm">保存</button>
+            </form>
+          </details>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" class="muted">暂无告警事件</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

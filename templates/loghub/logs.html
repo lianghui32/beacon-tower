@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}日志查询 · 日志服务{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>日志服务</h1>
+  <span class="desc">系统 Handler 自动接入 + OpenAPI 推送 · 关键字检索与级别过滤</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <input type="text" id="f-q" placeholder="关键字检索（如 payment / 演练 / Timeout）" style="width:300px;">
+    <select id="f-level">
+      <option value="">全部级别</option>
+      <option>CRITICAL</option><option>ERROR</option><option>WARNING</option><option>INFO</option>
+    </select>
+    <select id="f-source">
+      <option value="">全部来源</option>
+      <option value="system">系统</option><option value="app">应用</option>
+      <option value="api">接入API</option><option value="rum">前端RUM</option>
+    </select>
+    <button class="btn" onclick="page=1;load();">检索</button>
+    <button class="btn gray" onclick="document.getElementById('f-q').value='';document.getElementById('f-level').value='';document.getElementById('f-source').value='';page=1;load();">重置</button>
+    <a class="btn gray" id="export-btn" href="/logs/api/export/" onclick="this.href='/logs/api/export/?minutes='+getParam('minutes',1440)+'&q='+encodeURIComponent(document.getElementById('f-q').value)+'&level='+document.getElementById('f-level').value+'&source='+document.getElementById('f-source').value;">导出 CSV</a>
+    <span class="muted" id="total-info" style="margin-left:auto;"></span>
+  </div>
+  <div id="ch-hist" class="chart sm"></div>
+  <div id="log-box" style="margin-top:14px;background:#0b1220;border-radius:8px;padding:14px 16px;max-height:480px;overflow-y:auto;">
+    <div class="muted" style="color:#64748b;">加载中…</div>
+  </div>
+  <div style="margin-top:12px;text-align:center;">
+    <button class="btn gray sm" id="prev-btn" onclick="page=Math.max(1,page-1);load();">上一页</button>
+    <span class="muted" id="page-info" style="margin:0 12px;">-</span>
+    <button class="btn gray sm" id="next-btn" onclick="page+=1;load();">下一页</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var page = 1;
+  var chHist = mkChart('ch-hist');
+
+  function highlight(msg) {
+    var q = document.getElementById('f-q').value.trim();
+    var safe = esc(msg);
+    if (!q) return safe;
+    try {
+      return safe.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+        function (m) { return '<mark>' + m + '</mark>'; });
+    } catch (e) { return safe; }
+  }
+
+  function load() {
+    var q = new URLSearchParams({
+      minutes: getParam('minutes', 1440), page: page,
+      q: document.getElementById('f-q').value,
+      level: document.getElementById('f-level').value,
+      source: document.getElementById('f-source').value,
+    });
+    obsGet('/logs/api/search/?' + q).then(function (d) {
+      if (d.page > d.pages) { page = d.pages; }
+      document.getElementById('total-info').textContent = '共 ' + d.total + ' 条';
+      document.getElementById('page-info').textContent = '第 ' + Math.min(page, d.pages) + ' / ' + d.pages + ' 页';
+
+      var box = document.getElementById('log-box');
+      box.innerHTML = d.items.length ? d.items.map(function (r) {
+        return '<div class="log-line" style="color:#cbd5e1;">'
+          + '<span style="color:#64748b;">' + esc(r.time) + '</span> '
+          + '<span class="lv-' + esc(r.level) + '">[' + esc(r.level) + ']</span> '
+          + '<span style="color:#7dd3fc;">' + esc(r.logger || r.source) + '</span> : '
+          + highlight(r.message) + '</div>';
+      }).join('') : '<div class="muted" style="color:#64748b;">无匹配日志</div>';
+
+      var levels = ['ERROR', 'WARNING', 'INFO', 'CRITICAL'];
+      chHist.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: levels, textStyle: { fontSize: 11 } },
+        grid: { left: 50, right: 20, top: 36, bottom: 28 },
+        xAxis: { type: 'category', data: d.hist.map(h => h.t), axisLabel: { fontSize: 10 } },
+        yAxis: { type: 'value' },
+        series: levels.map(function (lv, i) {
+          var colors = ['#dc2626', '#f59e0b', '#2563eb', '#7f1d1d'];
+          return { name: lv, type: 'bar', stack: 'x', data: d.hist.map(h => h[lv] || 0),
+                   itemStyle: { color: colors[i] }, barMaxWidth: 22 };
+        }),
+      });
+    }).catch(function () {});
+  }
+  document.getElementById('f-q').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { page = 1; load(); }
+  });
+  poll(load, 15000);
+</script>
+{% endblock %}

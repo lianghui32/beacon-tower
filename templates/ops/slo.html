@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}SLO 错误预算 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>SLO 错误预算</h1>
+  <span class="desc">定义可用性/延迟目标，自动计算达成情况与错误预算消耗</span>
+</div>
+
+<div class="card">
+  <h2>新建 SLO</h2>
+  <form method="post" action="/ops/slo/create/" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <label>名称 <input type="text" name="name" required placeholder="如：论坛服务可用性" style="width:170px;"></label>
+    <label>可用性目标(%) <input type="number" name="target_availability" value="99.9" step="0.01" style="width:90px;"></label>
+    <label>P95 目标(ms) <input type="number" name="target_p95_ms" value="500" style="width:90px;"></label>
+    <label>窗口(天) <input type="number" name="window_days" value="30" min="1" max="90" style="width:70px;"></label>
+    <button class="btn" type="submit">+ 创建</button>
+  </form>
+</div>
+
+{% for item in items %}
+{% with s=item.status slo=item.slo %}
+<div class="card">
+  <h2>{{ slo.name }}
+    <span class="muted">窗口 {{ slo.window_days }} 天</span>
+    <span style="float:right;">
+      <a class="btn gray sm" href="/ops/slo/{{ slo.pk }}/export/">导出报告</a>
+      <form method="post" action="/ops/slo/{{ slo.pk }}/toggle/" style="display:inline;">{% csrf_token %}
+        <button class="btn gray sm">{{ slo.enabled|yesno:"停用,启用" }}</button></form>
+      <form method="post" action="/ops/slo/{{ slo.pk }}/delete/" style="display:inline;"
+            onsubmit="return confirm('删除 {{ slo.name }}？')">{% csrf_token %}
+        <button class="btn danger sm">删除</button></form>
+    </span>
+  </h2>
+  <div class="cards">
+    <div class="stat"><div class="num {% if s.avail_ok %}ok{% else %}warn{% endif %}">{{ s.availability }}%</div>
+      <div class="label">可用性（目标 {{ slo.target_availability }}%）</div></div>
+    <div class="stat"><div class="num {% if s.p95_ok %}ok{% else %}warn{% endif %}">{{ s.p95_ms }} ms</div>
+      <div class="label">P95 耗时（目标 {{ slo.target_p95_ms }}ms）</div></div>
+    <div class="stat"><div class="num {% if s.budget_burn_pct >= 100 %}warn{% elif s.budget_burn_pct >= 80 %}orange{% endif %}">{{ s.budget_burn_pct }}%</div>
+      <div class="label">错误预算已消耗</div></div>
+    <div class="stat"><div class="num">{{ s.total }}</div><div class="label">窗口内请求总数</div></div>
+    <div class="stat"><div class="num warn">{{ s.errors }} / {{ s.allowed_errors }}</div>
+      <div class="label">错误数 / 允许错误数</div></div>
+    <div class="stat"><div class="num">{{ s.recent_hour_errors }}</div><div class="label">近 1 小时错误数</div></div>
+  </div>
+  <div style="background:#eef2f7;border-radius:8px;height:22px;margin-top:12px;overflow:hidden;">
+    <div style="height:100%;width:{{ s.budget_burn_pct|floatformat:'0' }}%;border-radius:8px;
+      background: {% if s.budget_burn_pct >= 100 %}#dc2626{% elif s.budget_burn_pct >= 80 %}#ea580c{% else %}#2563eb{% endif %};"></div>
+  </div>
+  <p class="muted" style="margin-top:6px;">
+    {% if s.budget_burn_pct >= 100 %}❌ 错误预算已烧穿——按 SRE 实践应冻结发布、优先恢复可靠性。
+    {% elif s.budget_burn_pct >= 80 %}⚠️ 预算消耗超过 80%，放缓发布节奏。
+    {% else %}✓ 错误预算健康（允许错误 {{ s.allowed_errors }} 次 / 窗口）。
+    {% endif %}
+  </p>
+</div>
+{% endwith %}
+{% empty %}
+<div class="card"><h2>还没有 SLO</h2><p class="muted">用上方表单创建第一个服务等级目标。</p></div>
+{% endfor %}
+{% endblock %}

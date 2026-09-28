@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}拨测监控 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>拨测监控（黑盒监控）</h1>
+  <span class="desc">从平台视角主动探测目标 URL：可用性 / 延迟 / HTTPS 证书到期</span>
+</div>
+
+<div class="card">
+  <h2>新建拨测任务</h2>
+  <form method="post" action="/ops/probe/create/" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <label>名称 <input type="text" name="name" required placeholder="如：平台首页" style="width:130px;"></label>
+    <label>URL <input type="text" name="url" required placeholder="http(s)://..." style="width:300px;"></label>
+    <label>期望状态码 <input type="number" name="expect_status" value="200" style="width:80px;"></label>
+    <label>须包含关键字 <input type="text" name="keyword" placeholder="选填" style="width:110px;"></label>
+    <label>频率(秒) <input type="number" name="interval_sec" value="60" min="15" style="width:70px;"></label>
+    <button class="btn" type="submit">+ 创建</button>
+  </form>
+  <p class="muted" style="margin-top:8px;">目标 URL 会做安全校验（http/https、域名解析、阻断元数据地址）。
+     启用的任务自动出现在<a href="/alerts/policies/">告警策略</a>的指标下拉里（probe.* 可用率/延迟）。</p>
+</div>
+
+<div class="card">
+  <h2>任务列表（{{ tasks|length }}）</h2>
+  <table>
+    <thead><tr>
+      <th>任务</th><th>目标</th><th>状态</th><th>最近结果</th><th>延迟</th><th>证书</th><th style="width:230px;">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td><b>{{ t.name }}</b><br><span class="muted">每 {{ t.interval_sec }}s{% if t.keyword %} · 含"{{ t.keyword }}"{% endif %}</span></td>
+        <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">{{ t.url }}</td>
+        <td>{% if not t.enabled %}<span class="tag gray">停用</span>
+            {% elif t.consecutive_fails > 0 %}<span class="tag high">失败×{{ t.consecutive_fails }}</span>
+            {% else %}<span class="tag ok">正常</span>{% endif %}</td>
+        <td>{% if t.last_status %}HTTP {{ t.last_status }}{% if t.last_error %} <span class="tag high" title="{{ t.last_error }}">{{ t.last_error|truncatechars:20 }}</span>{% endif %}{% else %}<span class="muted">未执行</span>{% endif %}</td>
+        <td>{{ t.last_ms }} ms</td>
+        <td>{% if t.last_cert_days != None %}{{ t.last_cert_days }} 天{% else %}<span class="muted">-</span>{% endif %}</td>
+        <td>
+          <a class="btn sm" href="/ops/probe/{{ t.pk }}/">详情</a>
+          <form method="post" action="/ops/probe/{{ t.pk }}/run/" style="display:inline;"
+                onsubmit="return runNow(this, {{ t.pk }});">{% csrf_token %}
+            <button class="btn gray sm">立即拨测</button></form>
+          <form method="post" action="/ops/probe/{{ t.pk }}/toggle/" style="display:inline;">{% csrf_token %}
+            <button class="btn gray sm">{{ t.enabled|yesno:"停用,启用" }}</button></form>
+          <form method="post" action="/ops/probe/{{ t.pk }}/delete/" style="display:inline;"
+                onsubmit="return confirm('删除任务 {{ t.name }}？')">{% csrf_token %}
+            <button class="btn danger sm">删除</button></form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="muted">还没有拨测任务</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function runNow(form, pk) {
+    event.preventDefault();
+    var fd = new FormData(form);
+    fetch(form.action, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(function (d) {
+        alert(d.ok ? `✓ 拨测成功：HTTP ${d.status}，${d.ms}ms${d.cert_days != null ? '，证书剩 ' + d.cert_days + ' 天' : ''}`
+                   : `✗ 拨测失败：${d.error}`);
+        location.reload();
+      });
+    return false;
+  }
+</script>
+{% endblock %}

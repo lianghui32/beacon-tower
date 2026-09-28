@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}巡检报告 · {{ run.created_at|date:"m-d H:i" }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>巡检报告</h1>
+  <span class="desc">{{ run.created_at|date:"Y-m-d H:i:s" }} · {{ run.get_trigger_display }}</span>
+  <div class="spacer"></div>
+  <a class="btn" href="/ops/inspection/{{ run.pk }}/export/">导出 Markdown</a>
+  <a class="btn gray" href="/ops/inspection/">返回列表</a>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num {% if data.score >= 90 %}ok{% elif data.score >= 70 %}orange{% else %}warn{% endif %}">{{ data.score }}</div><div class="label">健康评分 / 100</div></div>
+  <div class="stat"><div class="num warn">{{ data.fails }}</div><div class="label">不合格项</div></div>
+  <div class="stat"><div class="num orange">{{ data.warns }}</div><div class="label">警告项</div></div>
+  <div class="stat"><div class="num ok">{{ data.checks|length }}</div><div class="label">检查项总数</div></div>
+</div>
+
+<div class="card" style="margin-top:18px;">
+  <h2>检查清单</h2>
+  <table>
+    <thead><tr><th style="width:180px;">检查项</th><th style="width:90px;">状态</th><th style="width:130px;">当前值</th><th>说明</th><th>处置建议</th></tr></thead>
+    <tbody>
+      {% for c in data.checks %}
+      <tr>
+        <td><b>{{ c.name }}</b></td>
+        <td>{% if c.status == 'ok' %}<span class="tag ok">正常</span>
+            {% elif c.status == 'warn' %}<span class="tag mid">警告</span>
+            {% else %}<span class="tag high">不合格</span>{% endif %}</td>
+        <td><b>{{ c.value }}</b></td>
+        <td>{{ c.detail }}</td>
+        <td class="muted">{{ c.suggestion|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

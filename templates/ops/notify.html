@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}通知渠道 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>通知渠道配置</h1>
+  <span class="desc">站内信始终可用；配置 SMTP / 企业微信 / 钉钉 / 通用 Webhook 后告警会推送到真实渠道</span>
+</div>
+
+<div class="card">
+  <form method="post" action="/ops/notify/save/">
+    {% csrf_token %}
+    <label style="font-size:14px;">
+      <input type="checkbox" name="enabled" {% if cfg.enabled %}checked{% endif %} style="transform:scale(1.3);margin-right:6px;">
+      <b>启用外部通知</b>（未启用时只写站内信与模拟 Webhook）
+    </label>
+
+    <h2 style="margin-top:16px;">SMTP 邮件</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <label>服务器 <input type="text" name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="smtp.qq.com" style="width:150px;"></label>
+      <label>端口 <input type="number" name="smtp_port" value="{{ cfg.smtp_port }}" style="width:80px;"></label>
+      <label><input type="checkbox" name="smtp_ssl" {% if cfg.smtp_ssl %}checked{% endif %}> SSL</label>
+      <label>用户 <input type="text" name="smtp_user" value="{{ cfg.smtp_user }}" style="width:150px;"></label>
+      <label>密码/授权码 <input type="password" name="smtp_pass" placeholder="{% if cfg.smtp_pass %}已保存（留空不改）{% else %}未设置{% endif %}" style="width:140px;"></label>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+      <label>发件人 <input type="text" name="mail_from" value="{{ cfg.mail_from }}" style="width:180px;"></label>
+      <label>收件人(逗号分隔) <input type="text" name="mail_to" value="{{ cfg.mail_to }}" style="width:280px;"></label>
+    </div>
+
+    <h2 style="margin-top:16px;">Webhook</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <label>企业微信 <input type="text" name="wecom_webhook" value="{{ cfg.wecom_webhook }}" placeholder="https://qyapi.weixin.qq.com/..." style="width:320px;"></label>
+      <label>钉钉 <input type="text" name="ding_webhook" value="{{ cfg.ding_webhook }}" placeholder="https://oapi.dingtalk.com/..." style="width:320px;"></label>
+    </div>
+    <div style="margin-top:8px;">
+      <label>通用 Webhook <input type="text" name="webhook_generic" value="{{ cfg.webhook_generic }}" placeholder="POST {title, content}" style="width:480px;"></label>
+    </div>
+
+    <button class="btn" type="submit" style="margin-top:16px;">保存配置</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>发送测试通知</h2>
+  <div style="display:flex;gap:10px;">
+    <button class="btn gray" onclick="testNotify('邮件')">测试邮件</button>
+    <button class="btn gray" onclick="testNotify('企业微信')">测试企业微信</button>
+    <button class="btn gray" onclick="testNotify('钉钉')">测试钉钉</button>
+    <button class="btn gray" onclick="testNotify('通用Webhook')">测试通用 Webhook</button>
+  </div>
+  <p class="muted" id="test-result" style="margin-top:10px;"></p>
+  <p class="muted">安全约束：Webhook 仅允许 http/https 且域名解析后不得指向链路本地/元数据地址
+    （环境变量 OBS_ALLOW_LOOPBACK_URL / OBS_ALLOW_PRIVATE_URL 可放开环回与私网）。</p>
+</div>
+
+<div class="card">
+  <h2>最近通知记录</h2>
+  <table>
+    <thead><tr><th style="width:90px;">渠道</th><th style="width:260px;">标题</th><th>内容</th><th style="width:130px;">时间</th></tr></thead>
+    <tbody>
+      {% for r in records %}
+      <tr><td><span class="tag low">{{ r.channel }}</span></td>
+        <td>{{ r.title|truncatechars:38 }}</td>
+        <td class="muted" style="font-size:12px;">{{ r.content|truncatechars:110 }}</td>
+        <td>{{ r.created_at|date:"m-d H:i" }}</td></tr>
+      {% empty %}
+      <tr><td colspan="4" class="muted">暂无通知记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function testNotify(channel) {
+    var fd = new FormData();
+    fd.append('channel', channel);
+    fd.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    fetch('/ops/notify/test/', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(function (d) {
+        document.getElementById('test-result').textContent =
+          '[' + d.channel + '] ' + d.status;
+      })
+      .catch(function () {
+        document.getElementById('test-result').textContent =
+          '[' + channel + '] 请求失败（网络或服务端错误）';
+      });
+  }
+</script>
+{% endblock %}

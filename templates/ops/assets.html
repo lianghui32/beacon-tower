@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}资产台账 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>资产台账（CMDB）</h1>
+  <span class="desc">Agent 接入的主机自动登记；在此维护负责人与环境标签</span>
+</div>
+
+<div class="card">
+  <h2>登记 / 更新资产</h2>
+  <form method="post" action="/ops/assets/save/" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <label>主机名 <input type="text" name="hostname" required placeholder="与采集主机名一致" style="width:150px;"></label>
+    <label>名称 <input type="text" name="label" placeholder="如：论坛 Web 服务器" style="width:150px;"></label>
+    <label>类型 <select name="kind"><option>主机</option><option>应用</option><option>数据库</option><option>中间件</option><option>其他</option></select></label>
+    <label>环境 <select name="env"><option>生产</option><option>测试</option><option>开发</option><option selected>未分类</option></select></label>
+    <label>负责人 <input type="text" name="owner" placeholder="如：张三" style="width:90px;"></label>
+    <label>备注 <input type="text" name="notes" style="width:160px;"></label>
+    <button class="btn" type="submit">保存</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>资产列表（{{ assets|length }}）</h2>
+  <table>
+    <thead><tr>
+      <th>主机名/标识</th><th>名称</th><th>类型</th><th>环境</th><th>负责人</th>
+      <th>最近上线</th><th>来源</th><th>备注</th><th style="width:80px;">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for a in assets %}
+      <tr>
+        <td><code class="inline">{{ a.hostname }}</code></td>
+        <td>{{ a.label|default:"-" }}</td>
+        <td>{{ a.kind }}</td>
+        <td>{% if a.env == '生产' %}<span class="tag high">{{ a.env }}</span>
+            {% elif a.env == '测试' %}<span class="tag mid">{{ a.env }}</span>
+            {% else %}<span class="tag gray">{{ a.env }}</span>{% endif %}</td>
+        <td>{{ a.owner|default:"-" }}</td>
+        <td>{{ a.last_seen_at|date:"m-d H:i"|default:"-" }}</td>
+        <td>{% if a.auto %}<span class="tag low">自动登记</span>{% else %}<span class="tag gray">人工</span>{% endif %}</td>
+        <td class="muted">{{ a.notes }}</td>
+        <td><form method="post" action="/ops/assets/{{ a.pk }}/delete/" style="display:inline;"
+              onsubmit="return confirm('删除资产 {{ a.hostname }}？')">{% csrf_token %}
+            <button class="btn danger sm">删除</button></form></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" class="muted">暂无资产（主机采集/Agent 上报后会自动登记）</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

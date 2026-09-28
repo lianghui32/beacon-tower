@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}巡检中心 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>巡检中心</h1>
+  <span class="desc">一键体检：资源水位 / 容量耗尽预测 / 接口质量 / 告警遗留 / 拨测与证书 / 日志 / SLO</span>
+  <div class="spacer"></div>
+  <form method="post" action="/ops/inspection/run/" style="display:inline;">{% csrf_token %}
+    <button class="btn">▶ 立即巡检</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>巡检历史</h2>
+  <table>
+    <thead><tr><th style="width:170px;">时间</th><th style="width:110px;">触发方式</th><th style="width:150px;">健康评分</th><th>结果摘要</th><th style="width:120px;">操作</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td>{{ r.created_at|date:"m-d H:i:s" }}</td>
+        <td>{{ r.get_trigger_display }}</td>
+        <td>
+          {% if r.score >= 90 %}<span class="tag ok">{{ r.score }} / 100</span>
+          {% elif r.score >= 70 %}<span class="tag mid">{{ r.score }} / 100</span>
+          {% else %}<span class="tag high">{{ r.score }} / 100</span>{% endif %}
+        </td>
+        <td><a href="/ops/inspection/{{ r.pk }}/">查看报告</a></td>
+        <td><a class="btn gray sm" href="/ops/inspection/{{ r.pk }}/export/">导出 MD</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">还没有巡检报告（后台每 12 小时自动巡检一次，也可手动触发）</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

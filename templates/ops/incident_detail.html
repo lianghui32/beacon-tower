@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}故障复盘 · {{ incident.title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>故障复盘</h1>
+  <span class="desc">{{ incident.get_status_display }} · 持续 {{ incident.duration_min }} 分钟</span>
+  <div class="spacer"></div>
+  <a class="btn" href="/ops/incidents/{{ incident.pk }}/export/">导出复盘报告</a>
+  <a class="btn gray" href="/ops/incidents/">返回列表</a>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num {% if incident.level == 'P0' %}warn{% endif %}">{{ incident.level }}</div><div class="label">最高级别</div></div>
+  <div class="stat"><div class="num">{{ incident.started_at|date:"m-d H:i" }}</div><div class="label">开始时间</div></div>
+  <div class="stat"><div class="num">{{ incident.resolved_at|date:"m-d H:i"|default:"未恢复" }}</div><div class="label">恢复时间</div></div>
+  <div class="stat"><div class="num">{{ incident.duration_min }} 分</div><div class="label">持续时间 (MTTR 本次)</div></div>
+  <div class="stat"><div class="num">{{ incident.alerts.count }}</div><div class="label">关联告警数</div></div>
+</div>
+
+<div class="card" style="margin-top:18px;">
+  <h2>告警时间线</h2>
+  <table>
+    <thead><tr><th style="width:150px;">时间</th><th style="width:60px;">级别</th><th>告警摘要</th><th style="width:80px;">状态</th><th style="width:100px;">策略</th></tr></thead>
+    <tbody>
+      {% for a in alerts %}
+      <tr>
+        <td>{{ a.started_at|date:"m-d H:i:s" }}</td>
+        <td><span class="tag {% if a.level == 'P0' %}p0{% elif a.level == 'P1' %}p1{% else %}p2{% endif %}">{{ a.level }}</span></td>
+        <td>{{ a.summary }}{% if a.handle_note %} <span class="muted">📝 {{ a.handle_note|truncatechars:60 }}</span>{% endif %}</td>
+        <td>{% if a.status == 'firing' %}<span class="tag high">触发中</span>{% else %}<span class="tag ok">恢复</span>{% endif %}</td>
+        <td class="muted">{{ a.policy.name }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">无关联告警</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>复盘信息</h2>
+  <form method="post" action="/ops/incidents/{{ incident.pk }}/update/">
+    {% csrf_token %}
+    <label>涉及服务</label>
+    <input type="text" name="services" value="{{ incident.services }}" style="width:100%;" class="mt6">
+    <label style="margin-top:12px;">根因分析</label>
+    <textarea name="root_cause" rows="4" style="width:100%;">{{ incident.root_cause }}</textarea>
+    <label style="margin-top:12px;">改进措施</label>
+    <textarea name="lessons" rows="4" style="width:100%;">{{ incident.lessons }}</textarea>
+    <button class="btn" type="submit" style="margin-top:12px;">保存复盘</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>通知记录</h2>
+  <table>
+    <thead><tr><th style="width:90px;">渠道</th><th style="width:250px;">标题</th><th>内容</th><th style="width:130px;">时间</th></tr></thead>
+    <tbody>
+      {% for n in notifications %}
+      <tr><td><span class="tag low">{{ n.channel }}</span></td>
+        <td>{{ n.title|truncatechars:40 }}</td>
+        <td class="muted" style="font-size:12px;">{{ n.content|truncatechars:100 }}</td>
+        <td>{{ n.created_at|date:"m-d H:i" }}</td></tr>
+      {% empty %}
+      <tr><td colspan="4" class="muted">无通知记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style> textarea { padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 13px; } </style>
+{% endblock %}

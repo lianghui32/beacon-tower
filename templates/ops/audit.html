@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}操作审计 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>操作 / 登录审计</h1>
+  <span class="desc">平台内关键变更与登录行为全程留痕</span>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <input type="text" id="f-q" placeholder="搜索用户 / 对象 / 详情" style="width:260px;" value="{{ q }}">
+    <select id="f-action">
+      <option value="">全部动作</option>
+      {% for a in actions %}<option value="{{ a }}" {% if a == action %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+    <button class="btn" onclick="applyFilter()">检索</button>
+    <span class="muted" style="margin-left:auto;">共显示 {{ logs|length }} 条（最新在前，最多 200 条）</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="width:150px;">时间</th><th style="width:100px;">用户</th><th style="width:140px;">动作</th>
+      <th style="width:180px;">对象</th><th>详情</th><th style="width:120px;">IP</th>
+    </tr></thead>
+    <tbody>
+      {% for l in logs %}
+      <tr>
+        <td>{{ l.created_at|date:"m-d H:i:s" }}</td>
+        <td><b>{{ l.user|default:"-" }}</b></td>
+        <td>{% if '删除' in l.action %}<span class="tag high">{{ l.action }}</span>
+            {% elif '创建' in l.action or '新增' in l.action %}<span class="tag ok">{{ l.action }}</span>
+            {% elif '登录失败' in l.action %}<span class="tag high">{{ l.action }}</span>
+            {% else %}<span class="tag low">{{ l.action }}</span>{% endif %}</td>
+        <td>{{ l.target|truncatechars:28 }}</td>
+        <td class="muted" style="font-size:12px;">{{ l.detail|truncatechars:90 }}</td>
+        <td class="muted">{{ l.ip }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="muted">暂无审计记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function applyFilter() {
+    var usp = new URLSearchParams();
+    if (document.getElementById('f-q').value) usp.set('q', document.getElementById('f-q').value);
+    if (document.getElementById('f-action').value) usp.set('action', document.getElementById('f-action').value);
+    location.search = usp.toString();
+  }
+</script>
+{% endblock %}

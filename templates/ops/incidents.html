@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}故障事件 · 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>故障事件管理</h1>
+  <span class="desc">时间相近的告警自动聚合为一次故障 · MTTR = 平均恢复时长</span>
+  <div class="spacer"></div>
+  {% if mttr %}<span class="tag gray">近 7 天 MTTR {{ mttr }} 分钟</span>{% endif %}
+  <a class="btn {% if not status %}btn{% else %}gray{% endif %} sm" href="/ops/incidents/">全部</a>
+  <a class="btn {% if status == 'open' %}btn{% else %}gray{% endif %} sm" href="/ops/incidents/?status=open">处理中</a>
+  <a class="btn {% if status == 'resolved' %}btn{% else %}gray{% endif %} sm" href="/ops/incidents/?status=resolved">已恢复</a>
+  <a class="btn {% if status == 'closed' %}btn{% else %}gray{% endif %} sm" href="/ops/incidents/?status=closed">已关闭</a>
+</div>
+
+<div class="card">
+  <table>
+    <thead><tr>
+      <th>级别</th><th>标题</th><th>状态</th><th>开始</th><th>恢复</th>
+      <th>持续(分)</th><th>关联告警</th><th style="width:150px;">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for i in incidents %}
+      <tr>
+        <td><span class="tag {% if i.level == 'P0' %}p0{% elif i.level == 'P1' %}p1{% elif i.level == 'P2' %}p2{% else %}gray{% endif %}">{{ i.level }}</span></td>
+        <td><a href="/ops/incidents/{{ i.pk }}/"><b>{{ i.title|truncatechars:50 }}</b></a>
+          {% if i.root_cause %}<div class="muted" style="font-size:12px;">📋 已复盘</div>{% endif %}</td>
+        <td>{% if i.status == 'open' %}<span class="tag high">处理中</span>
+            {% elif i.status == 'resolved' %}<span class="tag ok">已恢复</span>
+            {% else %}<span class="tag gray">已关闭</span>{% endif %}</td>
+        <td>{{ i.started_at|date:"m-d H:i" }}</td>
+        <td>{{ i.resolved_at|date:"m-d H:i"|default:"-" }}</td>
+        <td>{{ i.duration_min }}</td>
+        <td>{{ i.alerts.count }} 条</td>
+        <td>
+          <a class="btn sm" href="/ops/incidents/{{ i.pk }}/">复盘</a>
+          {% if i.status != 'closed' %}
+          <form method="post" action="/ops/incidents/{{ i.pk }}/close/" style="display:inline;">{% csrf_token %}
+            <button class="btn gray sm">关闭</button></form>
+          {% else %}
+          <form method="post" action="/ops/incidents/{{ i.pk }}/reopen/" style="display:inline;">{% csrf_token %}
+            <button class="btn gray sm">重开</button></form>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="muted">暂无故障事件（告警触发时会自动创建）</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

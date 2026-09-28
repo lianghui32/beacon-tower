@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}自动处置（自愈）· 运维中心{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>自动处置（自愈）</h1>
+  <span class="desc">告警触发 → 自动执行白名单处置动作（冷却期防重复） · 全程留痕</span>
+</div>
+
+<div class="card" style="border-left:4px solid #ea580c;">
+  <h2>新建自愈动作</h2>
+  <form method="post" action="/ops/heal/create/" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    {% csrf_token %}
+    <label>名称 <input type="text" name="name" required placeholder="如：磁盘高时清临时文件" style="width:180px;"></label>
+    <label>触发策略
+      <select name="policy" style="min-width:200px;">
+        <option value="">（任意策略不绑定=手动）</option>
+        {% for p in policies %}<option value="{{ p.pk }}">{{ p.name }} · {{ p.metric_key }}</option>{% endfor %}
+      </select></label>
+    <label>类型
+      <select name="action_type">
+        <option value="cleanup_tmp">清理临时目录（>24h 文件）</option>
+        <option value="http_callback">HTTP 回调</option>
+        <option value="command">自定义命令（参数列表）</option>
+      </select></label>
+    <label>参数 <input type="text" name="param" placeholder="目录 / URL / 命令" style="width:200px;"></label>
+    <label>冷却(分) <input type="number" name="cooldown_min" value="30" min="1" style="width:70px;"></label>
+    <button class="btn" type="submit">+ 创建（默认停用）</button>
+  </form>
+  <p class="muted" style="margin-top:8px;">
+    安全约束：HTTP 回调走 URL 安全校验（阻断元数据地址）；自定义命令以<b>参数列表 + 无 shell</b> 方式执行
+    （不支持管道/通配符），30 秒超时；动作创建后默认停用，确认无误再启用。
+  </p>
+</div>
+
+<div class="card">
+  <h2>动作列表（{{ actions|length }}）</h2>
+  <table>
+    <thead><tr>
+      <th>名称</th><th>触发策略</th><th>类型</th><th>参数</th><th>冷却</th>
+      <th>最近执行</th><th>状态</th><th style="width:190px;">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for a in actions %}
+      <tr>
+        <td><b>{{ a.name }}</b></td>
+        <td>{% if a.policy %}{{ a.policy.name }}{% else %}<span class="muted">未绑定（手动）</span>{% endif %}</td>
+        <td>{{ a.get_action_type_display }}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">{{ a.param|default:"-" }}</td>
+        <td>{{ a.cooldown_min }} 分</td>
+        <td>{{ a.last_run_at|date:"m-d H:i"|default:"-" }}</td>
+        <td>{% if a.enabled %}<span class="tag ok">启用</span>{% else %}<span class="tag gray">停用</span>{% endif %}</td>
+        <td>
+          <form method="post" action="/ops/heal/{{ a.pk }}/test/" style="display:inline;"
+                onsubmit="return confirm('立即测试执行 {{ a.name }}？')">{% csrf_token %}
+            <button class="btn gray sm">测试执行</button></form>
+          <form method="post" action="/ops/heal/{{ a.pk }}/toggle/" style="display:inline;">{% csrf_token %}
+            <button class="btn sm">{{ a.enabled|yesno:"停用,启用" }}</button></form>
+          <form method="post" action="/ops/heal/{{ a.pk }}/delete/" style="display:inline;"
+                onsubmit="return confirm('删除 {{ a.name }}？')">{% csrf_token %}
+            <button class="btn danger sm">删除</button></form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="muted">还没有自愈动作</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>执行记录</h2>
+  <table>
+    <thead><tr><th style="width:140px;">动作</th><th style="width:70px;">结果</th><th>输出</th><th style="width:140px;">时间</th></tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td>{{ r.action.name }}</td>
+        <td>{% if r.ok %}<span class="tag ok">成功</span>{% else %}<span class="tag high">失败</span>{% endif %}</td>
+        <td class="muted" style="font-size:12px;white-space:pre-wrap;">{{ r.output|truncatechars:180 }}</td>
+        <td>{{ r.created_at|date:"m-d H:i:s" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4" class="muted">暂无执行记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

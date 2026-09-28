@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}拨测详情 · {{ task.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>拨测详情：{{ task.name }}</h1>
+  <span class="desc">{{ task.url }}</span>
+  <div class="spacer"></div>
+  <a class="btn gray" href="/ops/probe/">返回列表</a>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num {% if task.last_ok %}ok{% else %}warn{% endif %}">{% if task.last_ok %}正常{% else %}失败{% endif %}</div><div class="label">最近状态（HTTP {{ task.last_status }}）</div></div>
+  <div class="stat"><div class="num">{{ task.last_ms }} ms</div><div class="label">最近延迟</div></div>
+  <div class="stat"><div class="num" id="s-avail">-</div><div class="label">近 24h 可用率 (%)</div></div>
+  <div class="stat"><div class="num {% if task.last_cert_days != None and task.last_cert_days < 14 %}warn{% endif %}">{% if task.last_cert_days != None %}{{ task.last_cert_days }} 天{% else %}-{% endif %}</div><div class="label">HTTPS 证书剩余</div></div>
+  <div class="stat"><div class="num">{{ task.interval_sec }}s</div><div class="label">拨测频率</div></div>
+</div>
+{% if task.last_error %}<div class="card" style="border-left:4px solid #dc2626;">最近错误：{{ task.last_error }}</div>{% endif %}
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card"><h2>延迟趋势（近 12 小时）</h2><div id="ch-lat" class="chart"></div></div>
+  <div class="card"><h2>可用性（成功=100 / 失败=0）</h2><div id="ch-ok" class="chart"></div></div>
+</div>
+
+<div class="card">
+  <h2>最近结果明细</h2>
+  <table>
+    <thead><tr><th>时间</th><th>结果</th><th>状态码</th><th>耗时 (ms)</th><th>证书(天)</th><th>错误</th></tr></thead>
+    <tbody>
+      {% for r in results %}
+      <tr>
+        <td>{{ r.created_at|date:"m-d H:i:s" }}</td>
+        <td>{% if r.ok %}<span class="tag ok">成功</span>{% else %}<span class="tag high">失败</span>{% endif %}</td>
+        <td>{{ r.status_code }}</td>
+        <td><b>{{ r.duration_ms }}</b></td>
+        <td>{{ r.cert_days|default:"-" }}</td>
+        <td class="muted">{{ r.error }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="muted">暂无结果（等待拨测线程执行，最多 {{ task.interval_sec }} 秒）</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chLat = mkChart('ch-lat'), chOk = mkChart('ch-ok');
+  function refresh() {
+    obsGet('/ops/probe/{{ task.pk }}/api/').then(function (d) {
+      if (d.availability != null) document.getElementById('s-avail').textContent = d.availability;
+      chLat.setOption(lineOption([{ name: '延迟 ms', x: d.series.map(p => p.t), y: d.series.map(p => p.ms), area: true }]));
+      chOk.setOption(lineOption([{ name: '成功=100', x: d.series.map(p => p.t), y: d.series.map(p => p.ok), color: '#16a34a' }],
+        { unit: '%', scale: false }));
+    }).catch(function () {});
+  }
+  poll(refresh, 15000);
+</script>
+{% endblock %}

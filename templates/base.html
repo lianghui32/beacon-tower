@@ -1,0 +1,310 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}烽火台 Beacon Tower{% endblock %}</title>
+  <script src="{% static 'echarts.min.js' %}"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg: #f0f3f8; --card: #fff; --text: #2c3e50; --head: #1f2d3d;
+      --muted: #7a8699; --line: #eef1f5; --thbg: #f8fafc; --thcolor: #5a6b7f;
+      --rowhover: #f7faff; --codebg: #eef2f7; --bd: #cbd5e1; --navhover: #24344a; }
+    body.dark { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --head: #f1f5f9;
+      --muted: #94a3b8; --line: #334155; --thbg: #172033; --thcolor: #94a3b8;
+      --rowhover: #243247; --codebg: #172033; --bd: #475569; --navhover: #2b3f5c; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg); color: var(--text); transition: background .2s; }
+
+    /* ---------- 侧边栏 ---------- */
+    .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 216px; background: #1c2733;
+      overflow-y: auto; padding: 14px 0 30px; z-index: 10; }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: #33475c; border-radius: 2px; }
+    .brand { color: #fff; font-size: 15px; font-weight: bold; padding: 6px 20px 16px;
+      border-bottom: 1px solid #2b3b4e; margin-bottom: 10px; letter-spacing: 1px; }
+    .brand small { display: block; color: #6e8199; font-size: 11px; font-weight: normal; margin-top: 4px; }
+    .nav-group { color: #5d7288; font-size: 11px; padding: 10px 20px 5px; letter-spacing: 1px;
+      cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between; }
+    .nav-group:hover { color: #8fa3b8; }
+    .nav-group .chev { font-size: 10px; transition: transform .15s; }
+    .nav-sec.collapsed .nav-links { display: none; }
+    .nav-sec.collapsed .chev { transform: rotate(-90deg); }
+    .sidebar a { display: block; color: #aeb9c6; text-decoration: none; font-size: 13px;
+      padding: 7px 20px; border-left: 3px solid transparent; }
+    .sidebar a:hover { color: #fff; background: var(--navhover); }
+    .sidebar a.active { color: #fff; background: var(--navhover); border-left-color: #3b82f6; }
+    .demo-badge { margin: 10px 14px 0; padding: 8px 10px; background: #2b3b4e; color: #fbbf24;
+      border: 1px dashed #fbbf24; border-radius: 8px; font-size: 12px; text-align: center; }
+    .side-toggle { position: fixed; top: 12px; left: 222px; z-index: 30; width: 26px; height: 26px;
+      border-radius: 6px; background: #1c2733; color: #cbd5e1; border: 1px solid #2b3b4e;
+      cursor: pointer; font-size: 12px; line-height: 1; }
+    .side-toggle:hover { background: #2b3b4e; color: #fff; }
+    body.side-collapsed .sidebar { transform: translateX(-100%); }
+    body.side-collapsed .side-toggle { left: 10px; }
+    body.side-collapsed .main { margin-left: 0; max-width: none; }
+    .sidebar { transition: transform .25s ease; }
+    .nav-user { margin: 18px 14px 0; padding-top: 14px; border-top: 1px solid #2b3b4e; }
+    .nu-name { color: #aeb9c6; font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .nu-btn { width: 100%; background: #2b3b4e; color: #cbd5e1; border: none; border-radius: 6px;
+      padding: 6px 0; font-size: 12px; cursor: pointer; }
+    .nu-btn:hover { background: #33475c; color: #fff; }
+    .theme-btn { background: none; border: none; color: #aeb9c6; cursor: pointer; font-size: 15px; }
+
+    /* ---------- 主区域 ---------- */
+    .main { margin-left: 216px; padding: 22px 26px 60px; max-width: 1460px; }
+    .page-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+    .page-head h1 { font-size: 20px; color: var(--head); }
+    .page-head .desc { color: var(--muted); font-size: 13px; }
+    .spacer { flex: 1; }
+
+    /* ---------- 卡片 / 统计卡 ---------- */
+    .card { background: var(--card); border-radius: 8px; padding: 18px 22px; margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(15,35,70,.07); }
+    .card h2 { font-size: 16px; margin-bottom: 14px; color: var(--head); }
+    .cards { display: flex; gap: 14px; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 150px; background: var(--card); border-radius: 8px; padding: 16px 20px;
+      box-shadow: 0 1px 3px rgba(15,35,70,.07); }
+    .stat .num { font-size: 24px; font-weight: bold; color: #2563eb; }
+    .stat .num.warn { color: #dc2626; }
+    .stat .num.ok { color: #16a34a; }
+    .stat .num.orange { color: #ea580c; }
+    .stat .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .chart { width: 100%; height: 320px; }
+    .chart.sm { height: 260px; }
+
+    /* ---------- 表格 ---------- */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--text); }
+    th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+    th { background: var(--thbg); color: var(--thcolor); }
+    tr:hover td { background: var(--rowhover); }
+
+    /* ---------- 标签 / 按钮 / 表单 ---------- */
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; }
+    .tag.high { background: #fee2e2; color: #b91c1c; }
+    .tag.mid  { background: #fef3c7; color: #92400e; }
+    .tag.low  { background: #dbeafe; color: #1d4ed8; }
+    .tag.ok   { background: #dcfce7; color: #15803d; }
+    .tag.gray { background: #e2e8f0; color: #475569; }
+    .tag.p0 { background: #dc2626; color: #fff; }
+    .tag.p1 { background: #ea580c; color: #fff; }
+    .tag.p2 { background: #2563eb; color: #fff; }
+    .btn { display: inline-block; background: #2563eb; color: #fff; border: none; border-radius: 6px;
+      padding: 8px 18px; font-size: 14px; cursor: pointer; text-decoration: none; }
+    .btn:hover { background: #1d4ed8; }
+    .btn.gray { background: #64748b; }
+    .btn.danger { background: #dc2626; }
+    .btn.sm { padding: 3px 10px; font-size: 12px; border-radius: 4px; }
+    select, input[type=text], input[type=number], input[type=password] {
+      padding: 6px 8px; border: 1px solid var(--bd); border-radius: 6px; font-size: 13px;
+      background: var(--card); color: var(--text); }
+    label { font-size: 13px; color: var(--muted); }
+    .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 6px;
+      font-size: 12px; overflow-x: auto; line-height: 1.6; }
+    code.inline { background: var(--codebg); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    @media (max-width: 1100px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+    footer { text-align: center; color: #9aa5b1; font-size: 12px; padding: 20px 0 30px; }
+    .log-line { font-family: Consolas, monospace; font-size: 12px; line-height: 1.9; }
+    .log-line .lv-ERROR { color: #dc2626; font-weight: bold; }
+    .log-line .lv-CRITICAL { color: #991b1b; font-weight: bold; background: #fee2e2; padding: 0 4px; }
+    .log-line .lv-WARNING { color: #d97706; font-weight: bold; }
+    .log-line .lv-INFO { color: #2563eb; }
+    .log-line .lv-DEBUG { color: #94a3b8; }
+    mark { background: #fde68a; padding: 0 2px; }
+    .tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--line); margin-bottom: 18px; }
+    .tabs a { padding: 8px 18px; text-decoration: none; color: var(--muted); font-size: 14px;
+      border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .tabs a.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: bold; }
+    .tabs a:hover { color: #2563eb; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">◈ 烽火台 Beacon Tower<small>Observability · 自研 · :8014</small></div>
+    {% if is_demo %}
+    <div class="demo-badge">🎁 演示模式 · 只读</div>
+    {% endif %}
+
+    <div class="nav-sec" data-g="overview">
+      <div class="nav-group" onclick="toggleNavGroup(this)">总览<span class="chev">▾</span></div>
+      <div class="nav-links"><a href="/">监控总览</a></div>
+    </div>
+    <div class="nav-sec" data-g="host">
+      <div class="nav-group" onclick="toggleNavGroup(this)">基础监控<span class="chev">▾</span></div>
+      <div class="nav-links"><a href="/hosts/">主机监控</a></div>
+    </div>
+    <div class="nav-sec" data-g="apm">
+      <div class="nav-group" onclick="toggleNavGroup(this)">应用性能监控 APM<span class="chev">▾</span></div>
+      <div class="nav-links">
+        <a href="/monitor/apm/">接口分析 · 调用链</a>
+        <a href="/monitor/apm/database/">数据库分析</a>
+        <a href="/monitor/benchmark/">基准压测</a>
+      </div>
+    </div>
+    <div class="nav-sec" data-g="rum">
+      <div class="nav-group" onclick="toggleNavGroup(this)">前端性能监控 RUM<span class="chev">▾</span></div>
+      <div class="nav-links">
+        <a href="/rum/">数据总览</a>
+        <a href="/rum/perf/">页面性能</a>
+        <a href="/rum/errors/">异常分析</a>
+        <a href="/rum/api/">API 监控</a>
+        <a href="/rum/resources/">静态资源</a>
+        <a href="/rum/custom/">自定义上报</a>
+      </div>
+    </div>
+    <div class="nav-sec" data-g="log">
+      <div class="nav-group" onclick="toggleNavGroup(this)">日志服务<span class="chev">▾</span></div>
+      <div class="nav-links"><a href="/logs/">日志查询</a></div>
+    </div>
+    <div class="nav-sec" data-g="geo">
+      <div class="nav-group" onclick="toggleNavGroup(this)">访问分析<span class="chev">▾</span></div>
+      <div class="nav-links"><a href="/analytics/geo/">IP 访问地图</a></div>
+    </div>
+    <div class="nav-sec" data-g="alert">
+      <div class="nav-group" onclick="toggleNavGroup(this)">告警中心<span class="chev">▾</span></div>
+      <div class="nav-links">
+        {% if not is_demo %}<a href="/alerts/policies/">告警策略</a>{% endif %}
+        <a href="/alerts/events/">告警事件</a>
+        <a href="/alerts/notifications/">通知记录</a>
+      </div>
+    </div>
+    <div class="nav-sec" data-g="ops">
+      <div class="nav-group" onclick="toggleNavGroup(this)">运维中心<span class="chev">▾</span></div>
+      <div class="nav-links">
+        {% if not is_demo %}<a href="/ops/probe/">拨测监控</a>{% endif %}
+        <a href="/ops/incidents/">故障事件</a>
+        <a href="/ops/inspection/">巡检中心</a>
+        <a href="/ops/slo/">SLO 错误预算</a>
+        <a href="/ops/assets/">资产台账</a>
+        {% if not is_demo %}<a href="/ops/heal/">自动处置</a>
+        <a href="/cleaner/">清理加速</a>
+        <a href="/ops/notify/">通知渠道</a>
+        <a href="/ops/audit/">操作审计</a>{% endif %}
+      </div>
+    </div>
+    <div class="nav-sec" data-g="ai">
+      <div class="nav-group" onclick="toggleNavGroup(this)">智能分析<span class="chev">▾</span></div>
+      <div class="nav-links">
+        <a href="/analytics/">智能分析工作台</a>
+        <a href="/monitor/diagnose/">性能诊断引擎</a>
+        <a href="/analytics/report/">报表中心</a>
+      </div>
+    </div>
+    <div class="nav-sec" data-g="viz">
+      <div class="nav-group" onclick="toggleNavGroup(this)">可视化<span class="chev">▾</span></div>
+      <div class="nav-links"><a href="/monitor/dashboard/">自定义大盘</a></div>
+    </div>
+    <div class="nav-sec" data-g="access">
+      <div class="nav-group" onclick="toggleNavGroup(this)">接入与演练<span class="chev">▾</span></div>
+      <div class="nav-links">
+        {% if not is_demo %}<a href="/integration/">接入中心</a>
+        <a href="/forum/chaos/">故障演练</a>{% endif %}
+        <a href="/forum/problem/">演示论坛 · 问题版</a>
+        <a href="/forum/optimized/">演示论坛 · 优化版</a>
+        {% if not is_demo %}<a href="/metrics">Prometheus /metrics</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="nav-user">
+      <div class="nu-name">
+        <span>👤 {{ request.user.username|default:"未登录" }}</span>
+        <button class="theme-btn" id="theme-toggle" title="切换暗色/亮色主题">🌙</button>
+      </div>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}
+        <button type="submit" class="nu-btn">退出登录</button>
+      </form>
+    </div>
+  </aside>
+  <button class="side-toggle" id="side-toggle" title="收起/展开侧边栏">◀</button>
+  <div class="main">
+    {% if messages %}
+    <div style="margin:14px 22px 0;">
+      {% for message in messages %}
+      <div class="card" style="padding:10px 16px;margin-bottom:10px;border-left:4px solid
+        {% if message.tags == 'error' %}#dc2626{% elif message.tags == 'warning' %}#f59e0b{% else %}#2563eb{% endif %};">
+        {{ message }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+  <script src="{% static 'obs/common.js' %}"></script>
+  <script>
+    // ---------- 侧边栏：分组折叠（记忆状态；首次只展开当前页所在分组） ----------
+    function toggleNavGroup(el) {
+      var sec = el.closest('.nav-sec');
+      sec.classList.toggle('collapsed');
+      try {
+        var collapsed = Array.from(document.querySelectorAll('.nav-sec.collapsed'))
+          .map(function (s) { return s.dataset.g; });
+        localStorage.setItem('obs-nav-collapsed', JSON.stringify(collapsed));
+      } catch (e) {}
+    }
+    (function () {
+      var secs = Array.from(document.querySelectorAll('.nav-sec'));
+      var saved = null;
+      try { saved = localStorage.getItem('obs-nav-collapsed'); } catch (e) {}
+      if (saved === null) {
+        secs.forEach(function (s) {
+          if (!s.querySelector('a.active')) s.classList.add('collapsed');
+        });
+      } else {
+        var collapsed;
+        try { collapsed = JSON.parse(saved); } catch (e) { collapsed = []; }
+        secs.forEach(function (s) {
+          s.classList.toggle('collapsed', collapsed.indexOf(s.dataset.g) !== -1);
+        });
+      }
+    })();
+
+    // ---------- 整栏收起/展开 ----------
+    (function () {
+      var btn = document.getElementById('side-toggle');
+      function apply(collapsed) {
+        document.body.classList.toggle('side-collapsed', collapsed);
+        btn.textContent = collapsed ? '☰' : '◀';
+        setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 300);
+      }
+      var saved = false;
+      try { saved = localStorage.getItem('obs-side-collapsed') === '1'; } catch (e) {}
+      apply(saved);
+      btn.onclick = function () {
+        var collapsed = !document.body.classList.contains('side-collapsed');
+        try { localStorage.setItem('obs-side-collapsed', collapsed ? '1' : '0'); } catch (e) {}
+        apply(collapsed);
+      };
+    })();
+
+    // ---------- 暗色主题：localStorage 记忆，图表颜色随主题切换 ----------
+    (function () {
+      var savedTheme = null;
+      try { savedTheme = localStorage.getItem('obs-theme'); } catch (e) {}
+      if (savedTheme === 'dark') {
+        document.body.classList.add('dark');
+        var b = document.getElementById('theme-toggle');
+        if (b) b.textContent = '☀️';
+      }
+      var btn = document.getElementById('theme-toggle');
+      if (btn) btn.onclick = function () {
+        var dark = document.body.classList.toggle('dark');
+        try { localStorage.setItem('obs-theme', dark ? 'dark' : 'light'); } catch (e) {}
+        btn.textContent = dark ? '☀️' : '🌙';
+        document.querySelectorAll('.chart').forEach(function (el) {
+          var inst = echarts.getInstanceByDom(el);
+          if (inst) inst.setOption({
+            textStyle: { color: dark ? '#e2e8f0' : '#2c3e50' },
+          });
+        });
+      };
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+  {% block page_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,64 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · 烽火台 Beacon Tower</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #17202c 0%, #24344a 60%, #1c2733 100%); }
+    .box { width: 380px; background: #fff; border-radius: 12px; padding: 36px 34px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .brand { text-align: center; margin-bottom: 26px; }
+    .brand .logo { font-size: 30px; }
+    .brand h1 { font-size: 19px; color: #17263b; margin-top: 8px; letter-spacing: 1px; }
+    .brand p { font-size: 12px; color: #7a8699; margin-top: 6px; }
+    label { display: block; font-size: 13px; color: #475569; margin: 14px 0 6px; }
+    input[type=text], input[type=password] { width: 100%; padding: 10px 12px; font-size: 14px;
+      border: 1px solid #cbd5e1; border-radius: 8px; outline: none; }
+    input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+    button { width: 100%; margin-top: 22px; padding: 11px; background: #2563eb; color: #fff;
+      border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .err { background: #fee2e2; color: #b91c1c; border-radius: 8px; padding: 9px 12px;
+      font-size: 13px; margin-top: 16px; }
+    .tip { margin-top: 18px; font-size: 12px; color: #94a3b8; line-height: 1.8; text-align: center; }
+    .demo-box { margin-top: 18px; padding: 10px 12px; background: #f0f7ff; border: 1px dashed #93c5fd;
+      border-radius: 8px; font-size: 12.5px; color: #1e40af; line-height: 1.9; text-align: center; }
+    .demo-box code { background: #dbeafe; padding: 1px 8px; border-radius: 4px;
+      font-size: 12.5px; user-select: all; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="brand">
+      <div class="logo">◈</div>
+      <h1>烽火台 · Beacon Tower</h1>
+      <p>Observability · 自研 · 端口 8014</p>
+    </div>
+    <form method="post" action="{% url 'login' %}">
+      {% csrf_token %}
+      <label for="id_username">用户名</label>
+      <input type="text" name="username" id="id_username" autocomplete="username" required autofocus>
+      <label for="id_password">密码</label>
+      <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+      <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">登 录</button>
+    {% if form.errors %}
+    <div class="err">用户名或密码不正确，请重试。</div>
+    {% endif %}
+  </form>
+  {% if demo_user %}
+  <div class="demo-box">
+    <b>🎁 演示体验账号（只读）</b><br>
+    用户名 <code>{{ demo_user }}</code>　密码 <code>{{ demo_pass }}</code><br>
+    <span>仅开放查询与可视化页面，可直接登录浏览</span>
+  </div>
+  {% else %}
+  <p class="tip">未创建演示账号：python manage.py create_demo_account</p>
+  {% endif %}
+  </div>
+</body>
+</html>

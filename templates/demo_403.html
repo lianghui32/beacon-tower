@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}演示模式 · 只读{% endblock %}
+{% block content %}
+<div class="card" style="max-width:560px;margin:60px auto;text-align:center;padding:40px;">
+  <div style="font-size:40px;">🎁</div>
+  <h2 style="margin:14px 0;">演示模式（只读）</h2>
+  <p class="muted" style="line-height:2;">
+    您正在使用<b>演示账号</b>浏览本平台。演示账号仅开放查询与可视化页面，
+    用于展示平台的观测与运维能力；管理配置、数据上报与写操作均已关闭。
+  </p>
+  <p class="muted">如需完整权限，请联系平台管理员。</p>
+  <a class="btn" href="/" style="margin-top:16px;">返回监控总览</a>
+</div>
+{% endblock %}

@@ -241,6 +241,10 @@ python manage.py create_demo_account --revoke --username demo   # 停用
   在触发阈值附近抖动的指标不会反复触发/恢复（防 flapping）；
 - **静默窗口**：发版/维护期间一键静默 N 小时，评估引擎跳过；
 - 评估：后台线程每 30 秒一轮，取最近 5 分钟窗口内均值与阈值比较；
+- **跨进程只有一个评估者**：告警/采集/拨测/巡检四个任务各持一把租约
+  （`monitor/leadership.py`，抢约是单条 compare-and-swap 条件更新），
+  worker 多副本部署时其余副本热待命，持有者宕机后 TTL 内自动接管；
+  进程内另有 `evaluate_lock` 防"后台线程 + 页面立即评估"并发产生重复事件；
 - 事件：条件成立且无未恢复事件 → 新建 firing 事件 + 站内信/模拟 Webhook 通知；
   条件解除 → 标记 resolved + 恢复通知；并发评估产生的重复事件会自愈合并；
 - 内置 7 条演示策略（含一条业务自定义指标"退款队列积压"）。
@@ -298,29 +302,37 @@ scrape_configs:
 ├── forum/                      # 演示目标应用（故意含性能问题 + 故障演练端点）
 ├── monitor/                    # 平台核心
 │   ├── middleware.py           #   请求计时 + TraceID + SQL span + 错误捕获
-│   ├── models.py               #   RequestMetric(调用链) / CustomMetric / DashCard
+│   ├── models.py               #   RequestMetric(调用链) / CustomMetric / DashCard / TaskLease
+│   ├── tracing.py              #   W3C Trace Context（traceparent 校验与 contextvars 绑定）
+│   ├── buffer.py               #   请求指标批量缓冲（采集与写库解耦 + 丢弃计数）
+│   ├── leadership.py           #   后台任务租约选主（CAS 抢约 + LeaseLoop 骨架）
+│   ├── security.py             #   整站门禁 / 令牌作用域 / 限速 / SQL 脱敏
 │   ├── registry.py             #   ★ 指标注册表（全平台统一取数入口）
 │   ├── services.py             #   总览/APM/数据库聚合 + 压测
-│   ├── metrics.py              #   Prometheus 文本输出
+│   ├── metrics.py              #   Prometheus 文本输出（含采集管道与租约自观测）
 │   ├── diagnoser.py            #   AST 静态诊断引擎（核心创新保留）
 │   ├── workers.py              #   后台线程启动器（幂等）
+│   ├── tests.py                #   链路/门禁/缓冲/租约回归（52+ 例）
 │   └── management/commands/
 │       ├── init_data.py        #   全观测域演示数据种子
+│       ├── obs_workers.py      #   worker 角色（副本数不限，内部选主）
 │       └── run_benchmark.py    #   压测命令
-├── hosts/                      # 主机监控（psutil 采集线程 + 页面）
+├── hosts/                      # 主机监控（psutil 采集线程 + 页面 + 远程上报）
 ├── rum/                        # 前端性能监控（beacon + 6 个分析页）
 ├── loghub/                     # 日志服务（Handler + 接入 API + 查询页）
-├── alerts/                     # 告警中心（策略/引擎/事件/通知）
+├── alerts/                     # 告警中心（策略/引擎/事件/通知 + 引擎回归测试）
 ├── analytics/                  # 智能分析（算法库 + 工作台 + 报表 + IP 访问地图）
 ├── ops/                        # 运维中心（拨测/故障单/巡检/SLO/资产/自愈/通知渠道/审计）
+│   ├── urlsafe.py              #   出站 URL 统一校验（SSRF 闸门 + 禁重定向）
+│   ├── crypto.py               #   SMTP 授权码 Fernet 加密落库
 │   ├── probing.py              #   拨测引擎（可用性/延迟/证书）
 │   ├── incidents.py            #   告警聚合为故障单 + 复盘导出
 │   ├── inspection.py           #   巡检清单引擎 + 容量耗尽预测
-│   ├── heal.py / notify.py     #   自愈执行器 / 真实通知渠道
-│   └── audit.py                #   操作与登录审计
+│   ├── heal.py                 #   白名单自愈执行器（拒绝 .bat + 冷却期原子抢占）
+│   └── tests.py                #   上述安全路径回归测试
 ├── cleaner/                    # 清理加速中心（磁盘分析 / 垃圾清理 / 内存整理）
-│   ├── services.py             #   白名单清理项 + 有界磁盘扫描 + 工作集修剪
-│   └── models.py               #   清理执行留痕
+│   ├── services.py             #   白名单清理项 + Junction 剪枝 + 有界扫描
+│   └── tests.py                #   "删除越界"逃逸测试
 └── templates/                  # base（侧边栏布局）+ 各模块页面
 ```
 

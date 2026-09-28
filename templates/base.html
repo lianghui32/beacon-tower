@@ -30,6 +30,12 @@
     .nav-group .chev { font-size: 10px; transition: transform .15s; }
     .nav-sec.collapsed .nav-links { display: none; }
     .nav-sec.collapsed .chev { transform: rotate(-90deg); }
+    /* 只有一个入口的分组不参与折叠：收起来等于把页面藏进一次点击里，反而更难找 */
+    .nav-sec.flat .chev { display: none; }
+    .nav-sec.flat > .nav-group { cursor: default; }
+    .nav-sec.flat > .nav-group:hover { color: #5d7288; }
+    .nav-sec.flat .nav-links { display: block; }
+    .nav-sec.flat .nav-links a { padding-top: 2px; padding-bottom: 2px; }
     .sidebar a { display: block; color: #aeb9c6; text-decoration: none; font-size: 13px;
       padding: 7px 20px; border-left: 3px solid transparent; }
     .sidebar a:hover { color: #fff; background: var(--navhover); }
@@ -236,9 +242,10 @@
   </div>
   <script src="{% static 'obs/common.js' %}"></script>
   <script>
-    // ---------- 侧边栏：分组折叠（记忆状态；首次只展开当前页所在分组） ----------
+    // ---------- 侧边栏：分组折叠（记忆状态；单子项分组不折叠；当前页所在分组强制展开）----------
     function toggleNavGroup(el) {
       var sec = el.closest('.nav-sec');
+      if (sec.classList.contains('flat')) return;   // 只有一个入口，没什么可收的
       sec.classList.toggle('collapsed');
       try {
         var collapsed = Array.from(document.querySelectorAll('.nav-sec.collapsed'))
@@ -248,19 +255,31 @@
     }
     (function () {
       var secs = Array.from(document.querySelectorAll('.nav-sec'));
+      // 分组可见条目数要在渲染后数：演示账号下部分入口不显示，
+      // 同一分组对管理员可能是 4 项、对演示用户只剩 1 项
+      secs.forEach(function (s) {
+        if (s.querySelectorAll('.nav-links a').length <= 1) s.classList.add('flat');
+      });
       var saved = null;
       try { saved = localStorage.getItem('obs-nav-collapsed'); } catch (e) {}
       if (saved === null) {
         secs.forEach(function (s) {
-          if (!s.querySelector('a.active')) s.classList.add('collapsed');
+          if (!s.classList.contains('flat') && !s.querySelector('a.active')) {
+            s.classList.add('collapsed');
+          }
         });
       } else {
         var collapsed;
         try { collapsed = JSON.parse(saved); } catch (e) { collapsed = []; }
         secs.forEach(function (s) {
-          s.classList.toggle('collapsed', collapsed.indexOf(s.dataset.g) !== -1);
+          s.classList.toggle('collapsed',
+            !s.classList.contains('flat') && collapsed.indexOf(s.dataset.g) !== -1);
         });
       }
+      // 含当前页的分组一律展开：否则收起后看不出自己在哪
+      secs.forEach(function (s) {
+        if (s.querySelector('a.active')) s.classList.remove('collapsed');
+      });
     })();
 
     // ---------- 整栏收起/展开 ----------

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}调用链不存在 · APM{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>调用链不存在</h2>
+  <p class="muted">未找到该 TraceID 对应的采集记录（可能已被保留期清理）。</p>
+  <a class="btn" href="/monitor/apm/">返回调用链列表</a>
+</div>
+{% endblock %}

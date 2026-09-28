@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}监控总览 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>监控总览</h1>
+  <span class="desc">全局健康度 · 数据每 10 秒自动刷新</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+
+<div id="alert-banner"></div>
+
+<div class="cards">
+  <div class="stat"><div class="num" id="k-total">-</div><div class="label">请求数（近 1 小时）</div></div>
+  <div class="stat"><div class="num" id="k-avg">-</div><div class="label">平均耗时 (ms)</div></div>
+  <div class="stat"><div class="num" id="k-p95">-</div><div class="label">P95 耗时 (ms)</div></div>
+  <div class="stat"><div class="num warn" id="k-err">-</div><div class="label">错误率 (%)</div></div>
+  <div class="stat"><div class="num" id="k-slow">-</div><div class="label">慢请求数 (>500ms)</div></div>
+</div>
+<div class="cards" style="margin-top:14px;">
+  <div class="stat"><div class="num" id="k-cpu">-</div><div class="label">主机 CPU (%)</div></div>
+  <div class="stat"><div class="num" id="k-mem">-</div><div class="label">主机内存 (%)</div></div>
+  <div class="stat"><div class="num" id="k-disk">-</div><div class="label">系统盘 (%)</div></div>
+  <div class="stat"><div class="num ok" id="k-sql">-</div><div class="label">SQL 查询总数</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card"><h2>请求量 / 耗时趋势</h2><div id="ch-req" class="chart"></div></div>
+  <div class="card"><h2>主机资源（真实 psutil 采集）</h2><div id="ch-host" class="chart"></div></div>
+</div>
+<div class="grid2">
+  <div class="card"><h2>错误率趋势</h2><div id="ch-err" class="chart sm"></div></div>
+  <div class="card"><h2>错误状态码分布</h2><div id="ch-errdist" class="chart sm"></div></div>
+</div>
+
+<div class="card">
+  <h2>服务健康列表</h2>
+  <table>
+    <thead><tr>
+      <th>路径</th><th>请求数</th><th>平均耗时 (ms)</th>
+      <th>错误率 (%)</th><th>健康状态</th>
+    </tr></thead>
+    <tbody id="svc-body"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>触发中的告警 <a class="btn gray sm" style="float:right;" href="/alerts/events/">全部事件</a></h2>
+  <table>
+    <thead><tr><th>级别</th><th>摘要</th><th>触发时间</th></tr></thead>
+    <tbody id="alert-body"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chReq = mkChart('ch-req'), chHost = mkChart('ch-host'),
+      chErr = mkChart('ch-err'), chDist = mkChart('ch-errdist');
+
+  function lvlTag(level) {
+    var cls = { P0: 'p0', P1: 'p1', P2: 'p2' }[level] || 'gray';
+    return '<span class="tag ' + cls + '">' + esc(level) + '</span>';
+  }
+
+  function refresh() {
+    obsGet('/monitor/api/overview/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      var k = d.kpi;
+      document.getElementById('k-total').textContent = k.total;
+      document.getElementById('k-avg').textContent = k.avg_ms;
+      document.getElementById('k-p95').textContent = k.p95_ms;
+      document.getElementById('k-err').textContent = k.error_rate;
+      document.getElementById('k-slow').textContent = k.slow;
+      document.getElementById('k-cpu').textContent = d.host.cpu;
+      document.getElementById('k-mem').textContent = d.host.mem;
+      document.getElementById('k-disk').textContent = d.host.disk;
+      document.getElementById('k-sql').textContent = k.sql_total;
+
+      // 告警横幅
+      var banner = document.getElementById('alert-banner');
+      if (d.firing_alerts.length) {
+        banner.innerHTML = '<div class="card" style="border-left:4px solid #dc2626;background:#fff7f7;">'
+          + '<b style="color:#b91c1c;">⚠ 当前有 ' + d.firing_alerts.length + ' 条告警触发中</b>'
+          + '<span class="muted">（' + esc(d.firing_alerts[0].summary) + '）</span></div>';
+      } else {
+        banner.innerHTML = '<div class="card" style="border-left:4px solid #16a34a;">'
+          + '<b style="color:#15803d;">✓ 系统正常</b><span class="muted">（无触发中的告警）</span></div>';
+      }
+      var ab = document.getElementById('alert-body');
+      ab.innerHTML = d.firing_alerts.length
+        ? d.firing_alerts.map(function (e) {
+            return '<tr><td>' + lvlTag(e.level) + '</td><td>' + esc(e.summary)
+              + '</td><td>' + esc(e.since) + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="3" class="muted">暂无触发中的告警</td></tr>';
+
+      var rc = d.series.request_count, av = d.series.avg_duration, er = d.series.error_rate,
+          hc = d.series.host_cpu, hm = d.series.host_mem;
+      chReq.setOption(lineOption([
+        { name: '请求数/分', x: rc.map(p => p.t), y: rc.map(p => p.v), area: true },
+        { name: '平均耗时(ms)', x: av.map(p => p.t), y: av.map(p => p.v), color: '#ea580c' },
+      ]));
+      chHost.setOption(lineOption([
+        { name: 'CPU %', x: hc.map(p => p.t), y: hc.map(p => p.v), color: '#7c3aed' },
+        { name: '内存 %', x: hm.map(p => p.t), y: hm.map(p => p.v), color: '#0891b2' },
+      ], { unit: '%', right: 20 }));
+      chErr.setOption(lineOption([
+        { name: '错误率%', x: er.map(p => p.t), y: er.map(p => p.v), color: '#dc2626' },
+      ], { unit: '%', area: true }));
+      chDist.setOption(pieOption(d.error_dist.map(function (x) {
+        return { name: '状态码 ' + x.status_code, value: x.n };
+      })));
+
+      var tb = document.getElementById('svc-body');
+      tb.innerHTML = d.services.length ? d.services.map(function (s) {
+        var tag = s.health === 'down' ? '<span class="tag high">故障</span>'
+          : s.health === 'warn' ? '<span class="tag mid">亚健康</span>'
+          : '<span class="tag ok">正常</span>';
+        return '<tr><td><code class="inline">' + esc(s.path) + '</code></td><td>' + s.n
+          + '</td><td>' + s.avg_ms + '</td><td>' + s.error_rate + '</td><td>' + tag + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="muted">暂无采集数据，可到故障演练页制造流量</td></tr>';
+    }).catch(function () {});
+  }
+  poll(refresh, 10000);
+</script>
+{% endblock %}

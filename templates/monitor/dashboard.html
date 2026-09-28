@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}自定义大盘 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>自定义大盘</h1>
+  <span class="desc">从指标注册表选择任意指标组成你的监控大盘</span>
+</div>
+
+<div class="card">
+  <h2>添加卡片</h2>
+  <form method="post" action="/monitor/dashboard/add/" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+    {% csrf_token %}
+    <label>标题 <input type="text" name="title" placeholder="留空自动用指标名" style="width:160px;"></label>
+    <label>指标
+      <select name="metric_key" style="min-width:220px;">
+        {% for c in catalog %}<option value="{{ c.key }}">{{ c.label }} · {{ c.key }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>类型
+      <select name="chart_type"><option value="line">折线</option><option value="area">面积</option><option value="bar">柱状</option></select>
+    </label>
+    <label>范围
+      <select name="minutes">
+        <option value="15">15 分钟</option><option value="60" selected>1 小时</option>
+        <option value="360">6 小时</option><option value="1440">24 小时</option>
+      </select>
+    </label>
+    <label>宽度
+      <select name="span"><option value="1">半宽</option><option value="2">全宽</option></select>
+    </label>
+    <button class="btn" type="submit">+ 添加</button>
+  </form>
+</div>
+
+<div class="grid2" id="card-grid">
+  {% for c in cards %}
+  <div class="card" {% if c.span == 2 %}style="grid-column: 1 / -1;"{% endif %}>
+    <h2>{{ c.title }}
+      <span class="muted">{{ c.chart_type }} · 近 {{ c.minutes }} 分钟</span>
+      <span style="float:right;">
+        <form method="post" action="/monitor/dashboard/{{ c.pk }}/move/up/" style="display:inline;">{% csrf_token %}
+          <button class="btn gray sm" title="上移">↑</button></form>
+        <form method="post" action="/monitor/dashboard/{{ c.pk }}/move/down/" style="display:inline;">{% csrf_token %}
+          <button class="btn gray sm" title="下移">↓</button></form>
+        <form method="post" action="/monitor/dashboard/{{ c.pk }}/delete/" style="display:inline;"
+              onsubmit="return confirm('删除该卡片？')">{% csrf_token %}
+          <button class="btn danger sm">删除</button></form>
+      </span>
+    </h2>
+    <div id="card-{{ c.pk }}" class="chart" data-key="{{ c.metric_key }}" data-minutes="{{ c.minutes }}"
+         data-type="{{ c.chart_type }}"></div>
+  </div>
+  {% empty %}
+  <div class="card"><h2>大盘还是空的</h2><p class="muted">用上面的表单添加第一张指标卡片。</p></div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('.chart[data-key]').forEach(function (el) {
+    var chart = echarts.init(el);
+    function load() {
+      obsGet('/monitor/api/metric/?key=' + encodeURIComponent(el.dataset.key)
+        + '&minutes=' + el.dataset.minutes).then(function (d) {
+        var type = el.dataset.type;
+        chart.setOption({
+          tooltip: { trigger: 'axis' },
+          grid: { left: 55, right: 25, top: 28, bottom: 30 },
+          xAxis: { type: 'category', data: d.points.map(p => p.t), axisLabel: { fontSize: 10 } },
+          yAxis: { type: 'value', name: d.unit, scale: true },
+          series: [{
+            name: d.label, type: type === 'bar' ? 'bar' : 'line', smooth: true,
+            data: d.points.map(p => p.v),
+            areaStyle: type === 'area' ? { opacity: 0.16 } : undefined,
+            itemStyle: { color: '#2563eb' }, barMaxWidth: 26,
+          }],
+        });
+      });
+    }
+    load();
+    setInterval(load, 30000);
+  });
+</script>
+{% endblock %}

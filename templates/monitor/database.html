@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}数据库分析 · APM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>数据库分析</h1>
+  <span class="desc">SQL 查询统计 · 慢查询模板聚合（近 {{ minutes }} 分钟）</span>
+</div>
+
+<div class="card">
+  <h2>各路径 SQL 查询统计</h2>
+  <div id="ch-sql" class="chart"></div>
+</div>
+
+<div class="card">
+  <h2>各路径 SQL 明细</h2>
+  <table>
+    <thead><tr>
+      <th>路径</th><th>请求数</th><th>平均 SQL 次数</th><th>平均 SQL 耗时 (ms)</th><th>慢查询总数</th>
+    </tr></thead>
+    <tbody>
+      {% for r in data.by_path %}
+      <tr>
+        <td><code class="inline">{{ r.path }}</code></td><td>{{ r.n }}</td>
+        <td><b>{{ r.avg_sql }}</b></td><td>{{ r.avg_sql_ms }}</td><td>{{ r.slow_total }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">暂无数据</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>慢查询模板 Top（按出现次数，语句归并）</h2>
+  <table>
+    <thead><tr>
+      <th style="width:70px;">次数</th><th style="width:90px;">最慢单条</th><th>SQL 模板</th><th>出现路径</th><th style="width:110px;">最近</th>
+    </tr></thead>
+    <tbody>
+      {% for t in data.slow_templates %}
+      <tr>
+        <td><span class="tag high">{{ t.n }}</span></td><td><b>{{ t.max_ms }} ms</b></td>
+        <td style="font-family:Consolas,monospace;font-size:12px;">{{ t.sql|truncatechars:150 }}</td>
+        <td>{% for p in t.paths %}<code class="inline">{{ p }}</code> {% endfor %}</td>
+        <td>{{ t.last }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">无慢查询记录</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{# by_path 数据由 json_script 安全嵌入（自动转义，防存储型 XSS） #}
+{{ data.by_path|json_script:"by-path-data" }}
+<script>
+  var rows = JSON.parse(document.getElementById('by-path-data').textContent);
+  var chart = mkChart('ch-sql');
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['平均 SQL 次数', '平均 SQL 耗时(ms)'] },
+    grid: { left: 60, right: 60, top: 45, bottom: 80 },
+    xAxis: { type: 'category', data: rows.map(r => r.path), axisLabel: { rotate: 20, fontSize: 11 } },
+    yAxis: [
+      { type: 'value', name: '次数' },
+      { type: 'value', name: 'ms' },
+    ],
+    series: [
+      { name: '平均 SQL 次数', type: 'bar', data: rows.map(r => r.avg_sql), itemStyle: { color: '#2563eb' }, barMaxWidth: 34 },
+      { name: '平均 SQL 耗时(ms)', type: 'line', yAxisIndex: 1, data: rows.map(r => r.avg_sql_ms), itemStyle: { color: '#f59e0b' } },
+    ],
+  });
+</script>
+{% endblock %}

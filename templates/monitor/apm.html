@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}APM · 接口分析与调用链{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>应用性能监控（APM）</h1>
+  <span class="desc">接口分析 · 调用链追踪 · 中间件自研采集</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+  <a class="btn gray sm" id="tx-export" href="/monitor/apm/api/transactions/export/">导出 CSV</a>
+</div>
+
+<div class="card">
+  <h2>接口（事务）分析 <span class="muted">按平均耗时排序</span></h2>
+  <table>
+    <thead><tr>
+      <th>路径</th><th>请求数</th><th>平均耗时 (ms)</th><th>P95 (ms)</th><th>最慢 (ms)</th>
+      <th>错误率 (%)</th><th>平均 SQL</th><th>慢查询</th><th>操作</th>
+    </tr></thead>
+    <tbody id="tx-body"><tr><td colspan="9" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>最近调用链
+    <label style="margin-left:20px;"><input type="checkbox" id="f-slow"> 只看慢请求</label>
+    <label style="margin-left:14px;"><input type="checkbox" id="f-error"> 只看错误</label>
+    <button class="btn gray sm" style="float:right;" onclick="loadTraces()">刷新</button>
+  </h2>
+  <table>
+    <thead><tr>
+      <th>时间</th><th>TraceID</th><th>方法</th><th>路径</th><th>状态码</th>
+      <th>耗时 (ms)</th><th>SQL 次数</th><th></th>
+    </tr></thead>
+    <tbody id="trace-body"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function loadTx() {
+    obsGet('/monitor/apm/api/transactions/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      var tb = document.getElementById('tx-body');
+      tb.innerHTML = d.rows.length ? d.rows.map(function (r) {
+        return '<tr><td><code class="inline">' + esc(r.path) + '</code></td><td>' + r.n
+          + '</td><td><b>' + r.avg_ms + '</b></td><td>' + r.p95_ms + '</td><td>' + r.max_ms
+          + '</td><td>' + (r.error_rate > 0 ? '<span class="tag high">' + r.error_rate + '</span>' : '0')
+          + '</td><td>' + r.avg_sql + '</td><td>' + (r.slow_queries || 0)
+          + '</td><td><a class="btn gray sm" href="/monitor/benchmark/">压测</a></td></tr>';
+      }).join('') : '<tr><td colspan="9" class="muted">暂无数据</td></tr>';
+    });
+  }
+  function loadTraces() {
+    var q = new URLSearchParams({ minutes: getParam('minutes', 60) });
+    if (document.getElementById('f-slow').checked) q.set('slow', '1');
+    if (document.getElementById('f-error').checked) q.set('error', '1');
+    obsGet('/monitor/apm/api/traces/?' + q).then(function (d) {
+      var tb = document.getElementById('trace-body');
+      tb.innerHTML = d.rows.length ? d.rows.map(function (r) {
+        return '<tr><td>' + esc(r.time) + '</td><td><code class="inline">' + esc(r.trace_id) + '</code></td>'
+          + '<td>' + esc(r.method) + '</td><td><code class="inline">' + esc(r.path) + '</code></td>'
+          + '<td>' + (r.is_error ? '<span class="tag high">' + r.status + '</span>' : r.status)
+          + '</td><td><b>' + r.duration_ms + '</b></td><td>' + r.sql_count
+          + '</td><td><a class="btn sm" href="/monitor/apm/trace/' + esc(r.trace_id) + '/">查看链路</a></td></tr>';
+      }).join('') : '<tr><td colspan="8" class="muted">暂无调用链</td></tr>';
+    });
+  }
+  document.getElementById('f-slow').onchange = loadTraces;
+  document.getElementById('f-error').onchange = loadTraces;
+  poll(loadTx, 15000);
+  loadTraces();
+</script>
+{% endblock %}

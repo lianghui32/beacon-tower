@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}调用链 {{ trace.metric.trace_id }} · APM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>调用链详情</h1>
+  <span class="desc">TraceID: <code class="inline">{{ trace.metric.trace_id }}</code></span>
+  <div class="spacer"></div>
+  <a class="btn gray" href="/monitor/apm/">返回列表</a>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num">{{ trace.metric.method }} {{ trace.metric.status_code }}</div><div class="label">方法 / 状态码</div></div>
+  <div class="stat"><div class="num {% if trace.metric.is_error %}warn{% endif %}">{{ trace.metric.duration_ms }} ms</div><div class="label">总耗时</div></div>
+  <div class="stat"><div class="num">{{ trace.metric.sql_count }}</div><div class="label">SQL 查询次数</div></div>
+  <div class="stat"><div class="num">{{ trace.metric.sql_time_ms }} ms</div><div class="label">SQL 累计耗时</div></div>
+  <div class="stat"><div class="num">{{ trace.metric.view_name|default:"-" }}</div><div class="label">视图函数</div></div>
+</div>
+
+<div class="card" style="margin-top:18px;">
+  <h2>Span 瀑布图（{{ trace.spans|length }} 个 span）</h2>
+  <div id="waterfall" style="width:100%;height:420px;"></div>
+</div>
+
+<div class="card">
+  <h2>慢查询明细（单条 &gt; 100ms，{{ trace.slow_queries|length }} 条）</h2>
+  {% if trace.slow_queries %}
+  <table>
+    <thead><tr><th style="width:120px;">耗时 (ms)</th><th>SQL</th></tr></thead>
+    <tbody>
+      {% for q in trace.slow_queries %}
+      <tr><td><b>{{ q.time_ms }}</b></td><td><code class="inline">{{ q.sql|truncatechars:180 }}</code></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">本请求无慢查询。</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>请求上下文</h2>
+  <table>
+    <tr><th style="width:130px;">路径</th><td><code class="inline">{{ trace.metric.path }}</code></td></tr>
+    <tr><th>客户端 IP</th><td>{{ trace.metric.client_ip|default:"-" }}</td></tr>
+    <tr><th>采集时间</th><td>{{ trace.metric.created_at }}</td></tr>
+    <tr><th>CPU 推算占用</th><td>{{ trace.metric.cpu_percent }}%</td></tr>
+  </table>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+{# spans 数据由 json_script 安全嵌入（自动转义 </script> 等，防存储型 XSS） #}
+{{ trace.spans|json_script:"spans-data" }}
+<script>
+  var spans = JSON.parse(document.getElementById('spans-data').textContent);
+  var total = {{ trace.metric.duration_ms|floatformat:2 }};
+  var rows = spans.map(function (s, i) {
+    return {
+      name: (i + 1) + '. [' + s.kind + '] ' + (s.name || '').slice(0, 70),
+      start: s.off, dur: Math.max(s.dur, 0.5), kind: s.kind,
+    };
+  }).reverse();
+  var kindColor = { request: '#2563eb', sql: '#ea580c', view: '#7c3aed' };
+  var chart = echarts.init(document.getElementById('waterfall'));
+  chart.setOption({
+    tooltip: {
+      formatter: function (p) {
+        var s = rows[p.dataIndex];
+        return esc(s.name) + '<br>偏移 ' + s.start + ' ms · 耗时 <b>' + s.dur + ' ms</b>';
+      },
+    },
+    grid: { left: 340, right: 60, top: 30, bottom: 40 },
+    xAxis: { type: 'value', name: 'ms', max: Math.ceil(total * 1.05) + 5,
+             axisLabel: { formatter: '{value}' } },
+    yAxis: { type: 'category', data: rows.map(function (r) { return r.name; }),
+             axisLabel: { fontSize: 11, width: 330, overflow: 'truncate' } },
+    series: [{
+      type: 'custom',
+      renderItem: function (params, api) {
+        var idx = api.value(0);
+        var row = rows[idx];
+        var x0 = api.coord([row.start, idx])[0];
+        var x1 = api.coord([Math.min(row.start + row.dur, total + 5), idx])[0];
+        var y = api.coord([0, idx])[1];
+        var h = api.size([0, 1])[1] * 0.55;
+        return {
+          type: 'rect', shape: { x: x0, y: y - h / 2, width: Math.max(x1 - x0, 2), height: h },
+          style: { fill: kindColor[row.kind] || '#64748b' },
+        };
+      },
+      data: rows.map(function (r, i) { return [i, r.dur]; }),
+      encode: { x: 1, y: 0 },
+    }],
+  });
+</script>
+{% endblock %}

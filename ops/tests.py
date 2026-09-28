@@ -77,8 +77,7 @@ class SsrfGuardTests(TestCase):
         handler = urlsafe._NoRedirect()
         self.assertIsNone(handler.redirect_request(None, None, 302, 'Found', {},
                                                    'http://169.254.169.254/'))
-        openers = type(urlsafe._OPENER).__mro__ and urlsafe._OPENER.handlers
-        self.assertTrue(any(isinstance(h, urlsafe._NoRedirect) for h in openers),
+        self.assertTrue(any(isinstance(h, urlsafe._NoRedirect) for h in urlsafe._OPENER.handlers),
                         '出站必须走禁重定向的 opener')
 
 

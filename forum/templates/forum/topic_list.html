@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ version_label }}帖子列表 · 演示论坛{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>
+    论坛帖子列表
+    <span class="tag {% if version == 'problem' %}high{% else %}ok{% endif %}">{{ version_label }}</span>
+    <span style="float:right;">
+      <a class="btn gray" style="padding:4px 12px;font-size:12px;"
+         href="{% if version == 'problem' %}/forum/optimized/{% else %}/forum/problem/{% endif %}">
+        切换到{% if version == 'problem' %}优化版{% else %}问题版{% endif %}
+      </a>
+    </span>
+  </h2>
+  {% if version == 'problem' %}
+  <p class="muted">本页为<b>问题版</b>：循环内查询作者与回复数（N+1）、无索引字段过滤、循环内重复计算版块统计、全表加载无 limit。</p>
+  {% else %}
+  <p class="muted">本页为<b>优化版</b>：select_related 预取外键 + annotate 聚合回复数 + 数据库层过滤与 LIMIT，版块统计只算一次。</p>
+  {% endif %}
+  <table style="margin-top:12px;">
+    <thead><tr>
+      <th>ID</th><th>标题</th><th>作者</th><th>版块</th>
+      <th>回复数</th><th>浏览量</th><th>发布时间</th>
+    </tr></thead>
+    <tbody>
+      {% for t in topics %}
+      <tr>
+        <td>{{ t.id }}</td>
+        <td><a href="/forum/topic/{{ t.id }}/">{{ t.title|truncatechars:30 }}</a></td>
+        <td>{{ t.author }}</td>
+        <td>{{ t.category }}</td>
+        <td>{{ t.reply_count }}</td>
+        <td>{{ t.views }}</td>
+        <td>{{ t.created_at|date:"m-d H:i" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="muted">暂无数据，请先运行 python manage.py init_data</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>本次请求性能数据（页面底部实时统计）</h2>
+  <div class="cards">
+    <div class="stat">
+      <div class="num {% if debug.sql_count > 25 %}warn{% endif %}">{{ debug.sql_count }}</div>
+      <div class="label">SQL 查询次数</div>
+    </div>
+    <div class="stat">
+      <div class="num {% if debug.duration_ms > 200 %}warn{% endif %}">{{ debug.duration_ms }} ms</div>
+      <div class="label">视图层耗时</div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:12px;">
+    {% if version == 'problem' %}
+    对照体验：点右上角切到优化版，SQL 次数会从"随帖子数线性增长"降到个位数。
+    数据同步写入采集表，可在 <a href="/monitor/apm/">APM 接口分析</a> 查看趋势，或用 <a href="/monitor/benchmark/">基准压测</a> 输出对比表。
+    {% else %}
+    优化版把查询次数压到常数级。想看差距？切回 <a href="/forum/problem/">问题版</a> 对比底部数字。
+    {% endif %}
+  </p>
+</div>
+{% include "rum_snippet.html" %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.title }} · 演示论坛{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ topic.title }}</h2>
+  <p class="muted">{{ topic.author.username }} · {{ topic.category }} · 发布于 {{ topic.created_at|date:"Y-m-d H:i" }} · 浏览 {{ topic.views }}</p>
+  <p style="line-height:1.9; margin-top:12px; white-space:pre-wrap;">{{ topic.content }}</p>
+</div>
+<div class="card">
+  <h2>回复（{{ replies|length }}）</h2>
+  {% for r in replies %}
+  <div style="border-bottom:1px solid #eef1f5; padding:10px 0;">
+    <span class="muted">{{ r.author.username }} · {{ r.created_at|date:"m-d H:i" }}</span>
+    <p style="margin-top:4px; line-height:1.7;">{{ r.content }}</p>
+  </div>
+  {% empty %}
+  <p class="muted">暂无回复</p>
+  {% endfor %}
+</div>
+<div class="card">
+  <p class="muted">本次请求：SQL 查询 {{ debug.sql_count }} 次，视图层耗时 {{ debug.duration_ms }} ms（select_related 预取帖子作者与回复作者）。</p>
+</div>
+{% include "rum_snippet.html" %}
+{% endblock %}

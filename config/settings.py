@@ -183,7 +183,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
 # collectstatic 目标（容器/反代部署用；开发 runserver 不需要）
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = Path(os.environ.get('OBS_STATIC_ROOT') or (BASE_DIR / 'staticfiles'))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ---------------- 日志 ----------------
@@ -232,6 +232,11 @@ OBSERVABILITY = {
     'INGEST_TOKEN': _ingest_token(),
     # 是否在本机运行 psutil 采集线程（平台所在机器默认开启）
     'LOCAL_COLLECTOR': os.environ.get('OBS_LOCAL_COLLECTOR', '1') != '0',
+    # 登录页是否直接展示只读演示账号密码（对外演示用）。
+    # 默认跟随 DEBUG；生产部署要公开演示入口时显式设 OBS_SHOW_DEMO_ACCOUNT=1，
+    # 前提是那个账号确实只读（演示组的写操作在 security.py 里一律 403）。
+    'SHOW_DEMO_ACCOUNT': os.environ.get('OBS_SHOW_DEMO_ACCOUNT',
+                                        '1' if os.environ.get('DJANGO_DEBUG', '1') == '1' else '0') == '1',
     # ---- 请求指标批量缓冲（monitor/buffer.py）----
     # 请求线程只入队，后台线程按"攒满 N 条或到期 T 秒"bulk_create 批量落库。
     # 关闭（或管理命令/测试进程）时退化为同步写库，保持"请求结束即落库"的语义。

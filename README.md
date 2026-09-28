@@ -432,8 +432,12 @@ docker compose up -d --scale worker=3     # 可选：后台任务也要高可用
 - 容器以非 root 用户运行；`SECRET_KEY` / 接入令牌 / 演示账号凭据 / SQLite 兜底库都在
   命名卷 `obsdata:/data` 里（不挂卷的话容器一重建密钥就重新生成，会话与已加密的
   SMTP 授权码全部失效）；镜像内不含任何密钥（`.dockerignore` 排除全部凭据文件）；
-- 静态文件：`collectstatic` 产物在 bind 卷 `./staticfiles`，由宿主机 nginx 直接伺服
+- 静态文件：`collectstatic` 产物默认在 `./staticfiles`，由宿主机 nginx 直接伺服
   `/static/`——`DEBUG=0` 时 Django 不处理静态文件，只反代应用会让页面丢样式与图表；
+  代码树对服务用户只读的部署（systemd + root 拥有的仓库目录）用
+  `OBS_STATIC_ROOT` 指到可写目录，并让 nginx 的 `alias` 指向同一处；
+- 对外演示想让访客在登录页直接看到只读演示账号，设 `OBS_SHOW_DEMO_ACCOUNT=1`
+  （默认跟随 `DEBUG`，生产不主动外泄）；凭据文件写在 `OBS_DATA_DIR` 指向的目录；
 - 反向代理场景还需在 `.env` 里显式打开 `OBS_TRUST_XFORWARDED_FOR=1`（否则客户端 IP
   一律取连接地址，地域统计失真）与 `DJANGO_SECURE_COOKIES=1` + `DJANGO_CSRF_TRUSTED_ORIGINS`
   （HTTPS 下 Cookie 只走加密通道并开 HSTS）；两者默认关闭，纯本机 http 演示不要开；

@@ -72,7 +72,7 @@ class Command(BaseCommand):
         user.save()
         user.groups.add(group)
 
-        cred_file = Path(settings.BASE_DIR) / 'demo_credentials.txt'
+        cred_file = Path(settings.DATA_DIR) / 'demo_credentials.txt'
         cred_file.write_text(
             f'# 只读演示账号（生成时间 {datetime.now():%Y-%m-%d %H:%M}）\n'
             f'username={username}\npassword={password}\n'

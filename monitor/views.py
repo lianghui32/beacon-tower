@@ -104,8 +104,11 @@ def login_page(request):
             '使用正确密码可直接登录。', status=429)
 
     demo_user = demo_pass = ''
-    if settings.DEBUG:
-        cred_file = Path(settings.BASE_DIR) / 'demo_credentials.txt'
+    if settings.OBSERVABILITY['SHOW_DEMO_ACCOUNT']:
+        # 凭据文件在 DATA_DIR（部署时可写卷）；本机开发历史位置在 BASE_DIR，兼容读一下
+        cred_file = Path(settings.DATA_DIR) / 'demo_credentials.txt'
+        if not cred_file.exists():
+            cred_file = Path(settings.BASE_DIR) / 'demo_credentials.txt'
         if cred_file.exists():
             # 只解析第一组 username/password（遇到第二组即停止），并校验账号确属演示组
             parsed_user = parsed_pass = ''

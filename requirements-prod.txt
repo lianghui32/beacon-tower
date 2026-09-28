@@ -1,0 +1,7 @@
+# 生产依赖（Docker 镜像 / PostgreSQL 部署用；本地演示用 requirements.txt 即可）
+Django>=5.2
+psutil>=5.9
+cryptography>=42.0
+gunicorn>=22.0          # WSGI 服务器（多 worker 多线程）
+psycopg[binary]>=3.1    # PostgreSQL 驱动（OBS_DATABASE_URL 启用）
+faker>=20.0             # init_data 演示数据（可选）

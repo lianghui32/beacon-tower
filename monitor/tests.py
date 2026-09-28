@@ -582,6 +582,23 @@ class RouteSmokeTests(TestCase):
         self.assertEqual(leaked, [], f'以下页面漏出了未渲染的模板标签: {leaked}')
 
 
+class OverviewRangeLabelTests(TestCase):
+    """KPI 标签里的"近 X"要跟着时间范围选择器走：写死"近 1 小时"，
+    选近 6 小时时数字与标签就自相矛盾（截图时肉眼发现的）。"""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+
+        self.client.force_login(User.objects.create_superuser('labelbot', '', 'label-pass-9527'))
+
+    def test_label_follows_selected_range(self):
+        for q, want in (('', '近 1 小时'), ('?minutes=360', '近 6 小时'),
+                        ('?minutes=1440', '近 24 小时'), ('?minutes=4320', '近 3 天'),
+                        ('?minutes=90', '近 90 分钟')):
+            body = self.client.get('/' + q).content.decode('utf-8')
+            self.assertIn('请求数（' + want + '）', body, q)
+
+
 class BenchmarkSuiteTests(TestCase):
     """基准压测回归：曾用匿名 Client 压测——登录门禁下全被 302，
     问题版/优化版对比的是两个登录跳转（SQL 计数恒为 0）且不落指标。

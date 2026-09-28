@@ -29,6 +29,18 @@ def _minutes(request, default=60):
     return max(5, min(4320, m))
 
 
+def _range_label(minutes):
+    """"近 X"标签的措辞，与 static/obs/common.js 的 RANGES 对齐。"""
+    known = {15: '15 分钟', 60: '1 小时', 360: '6 小时', 1440: '24 小时', 4320: '3 天'}
+    if minutes in known:
+        return known[minutes]
+    if minutes % 1440 == 0:
+        return f'{minutes // 1440} 天'
+    if minutes % 60 == 0:
+        return f'{minutes // 60} 小时'
+    return f'{minutes} 分钟'
+
+
 def login_page_sensitive(view):
     """DEBUG 报错页不展示本视图局部变量（demo_pass 等敏感值）"""
     return sensitive_variables()(view)
@@ -140,7 +152,8 @@ def login_page(request):
 def overview(request):
     """全站监控总览（首页）"""
     minutes = _minutes(request, 60)
-    return render(request, 'monitor/overview.html', {'minutes': minutes})
+    return render(request, 'monitor/overview.html', {
+        'minutes': minutes, 'range_label': _range_label(minutes)})
 
 
 @require_GET

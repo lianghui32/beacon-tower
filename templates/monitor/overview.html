@@ -11,7 +11,7 @@
 <div id="alert-banner"></div>
 
 <div class="cards">
-  <div class="stat"><div class="num" id="k-total">-</div><div class="label">请求数（近 1 小时）</div></div>
+  <div class="stat"><div class="num" id="k-total">-</div><div class="label">请求数（近 {{ range_label }}）</div></div>
   <div class="stat"><div class="num" id="k-avg">-</div><div class="label">平均耗时 (ms)</div></div>
   <div class="stat"><div class="num" id="k-p95">-</div><div class="label">P95 耗时 (ms)</div></div>
   <div class="stat"><div class="num warn" id="k-err">-</div><div class="label">错误率 (%)</div></div>

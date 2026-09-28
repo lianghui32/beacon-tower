@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}接入中心 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>接入中心</h1>
+  <span class="desc">账号认证 · 接入令牌 · 多服务器 Agent · 六大观测域接入方式</span>
+</div>
+
+<div class="card" style="border-left:4px solid #dc2626;">
+  <h2>0. 安全模型（自用系统）</h2>
+  <p class="muted" style="line-height:2;">
+    ① <b>整站登录</b>：所有页面（含全部数据 API）要求登录会话，未登录访问一律跳转登录页；<br>
+    ② <b>接入令牌</b>：所有上报端点（主机 Agent / 日志 / 自定义指标 / RUM beacon / Prometheus /metrics）
+    要求"登录会话"或"携带令牌"二者其一，匿名写入一律 401；<br>
+    ③ 令牌在服务器上首次启动时自动生成：<code class="inline">ingest_token.txt</code>
+    （也可用环境变量 <code class="inline">OBS_INGEST_TOKEN</code> 覆盖）。当前令牌：
+  </p>
+  {% if token_masked %}
+  <pre>{{ token }}</pre>
+  <p class="muted">⚠️ 当前账号非管理员，令牌掩码显示。完整令牌请用管理员账号查看本页，或直接读取服务器上的 <code class="inline">ingest_token.txt</code>。</p>
+  {% else %}
+  <pre>{{ token }}</pre>
+  {% endif %}
+  <p class="muted">轮换方法：删除平台根目录的 <code class="inline">ingest_token.txt</code> 并重启平台（同时更新各 Agent 的环境变量）。令牌仅对上报 API 与 /metrics 生效，不能用于访问页面。</p>
+</div>
+
+<div class="card">
+  <h2>1. 账号管理</h2>
+  <p class="muted" style="line-height:2;">
+    创建账号：<code class="inline">python manage.py createsuperuser</code>（按提示输入用户名/密码）；
+    修改密码：<code class="inline">python manage.py changepassword 用户名</code>；
+    登录后可在 <code class="inline">/admin/</code> 里增删普通用户。会话有效期 14 天，Cookie 为 HttpOnly + SameSite=Lax。
+  </p>
+</div>
+
+<div class="card" style="border-left:4px solid #2563eb;">
+  <h2>2. 接入要监控的服务器（主机 Agent）</h2>
+  <p class="muted" style="line-height:1.9;">
+    在<b>任意要监控的服务器</b>上运行自研 Agent（仅依赖 psutil，HTTP 用标准库实现），
+    它每 15 秒采集一次本机指标并推送到平台。多台服务器重复以下步骤即可，主机页下拉框会自动出现新主机。
+  </p>
+  <p style="margin-top:12px;"><b>第一步：在目标服务器上准备</b></p>
+  <pre># 下载 Agent（也可直接拷贝项目里的 agent/obs_agent.py）
+curl -o obs_agent.py http://平台IP:8014/static/agent/obs_agent.py
+pip install psutil</pre>
+  <p style="margin-top:12px;"><b>第二步：配置并启动（Linux）</b></p>
+  <pre>export OBS_SERVER_URL="http://平台IP:8014"
+export OBS_INGEST_TOKEN="{{ token }}"
+export OBS_HOST_NAME="web-1"          # 可选：自定义主机别名
+python obs_agent.py                   # 前台调试
+nohup python obs_agent.py >/dev/null 2>&1 &   # 后台常驻</pre>
+  <p class="muted">systemd 常驻（推荐生产）：</p>
+  <pre>[Unit]
+Description=Observability Host Agent
+After=network.target
+
+[Service]
+Environment=OBS_SERVER_URL=http://平台IP:8014
+Environment=OBS_INGEST_TOKEN={{ token }}
+Environment=OBS_HOST_NAME=web-1
+ExecStart=/usr/bin/python3 /opt/obs/obs_agent.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target</pre>
+  <p style="margin-top:12px;"><b>Windows 服务器</b></p>
+  <pre>set OBS_SERVER_URL=http://平台IP:8014
+set OBS_INGEST_TOKEN={{ token }}
+python obs_agent.py
+:: 常驻：任务计划程序 -> 开机触发 -> 运行 python obs_agent.py（起始于脚本目录）</pre>
+  <p style="margin-top:12px;"><b>第三步：验证</b></p>
+  <p class="muted">打开 <a href="/hosts/">主机监控</a>，右上角下拉框选择新主机查看曲线。
+  Agent 断网会自动重试（每 20 次失败打一条日志），恢复后自动续传。</p>
+</div>
+
+<div class="card">
+  <h2>3. 应用性能监控 APM（自动接入）</h2>
+  <p class="muted">自研 <code class="inline">RequestTimingMiddleware</code> 对平台 Django 项目的全部业务请求自动采集：
+     耗时、状态码、SQL 次数与耗时、慢查询、调用链 span、TraceID、错误标记，无需业务代码改造。</p>
+</div>
+
+<div class="card">
+  <h2>4. 前端性能监控 RUM（一行代码接入）</h2>
+  <p class="muted">把下面两行加到任意页面（论坛演示页已接入）。登录用户的浏览器会话即可通过校验；
+     匿名页面的批量上报建议在接入层网关附加令牌请求头（<code class="inline">?token=</code> 查询串仅为旧版兼容，会进入访问日志，不推荐）：</p>
+  <pre>&lt;script&gt;window._OBS_RUM = { endpoint: '/rum/beacon/', app: '你的应用名' };&lt;/script&gt;
+&lt;script src="/static/rum.js"&gt;&lt;/script&gt;</pre>
+  <p class="muted">业务埋点：<code class="inline">window.obsRum('事件名', {任意 JSON})</code></p>
+</div>
+
+<div class="card">
+  <h2>4.5 访客 IP 归属地解析（真实 IP 库接入，可选）</h2>
+  <p class="muted" style="line-height:1.9;">
+    "IP 访问地图"页面的归属地解析目前为<b>内置演示解析</b>（按 IP 哈希确定性映射省份，仅供演示）。
+    要解析真实归属地，任选其一放到<b>平台项目根目录</b>即可，无需改代码：
+  </p>
+  <pre># 方式一：MaxMind GeoLite2（免费，需注册下载 mmdb）
+pip install geoip2
+# 把 GeoLite2-City.mmdb 放到项目根目录后重启平台
+
+# 方式二：纯真 IP 库（免费）
+pip install qqwry-py3
+# 把 qqwry.dat 放到项目根目录后重启平台</pre>
+  <p class="muted">解析在采集时完成并缓存（同一 IP 只解析一次）；页面标题栏会显示当前生效的解析后端。</p>
+</div>
+
+<div class="card">
+  <h2>5. 日志接入（自动 + OpenAPI）</h2>
+  <p class="muted">平台已把 logging Handler 挂到 root logger（WARNING 及以上自动入库）；
+     外部程序用 HTTP API 推送（需携带令牌）：</p>
+  <pre>curl -X POST http://127.0.0.1:8014/logs/api/ingest/ \
+  -H "Content-Type: application/json" \
+  -H "X-OBS-Token: {{ token }}" \
+  -d '[{"level":"ERROR","source":"app","logger":"payment",
+        "message":"订单 20260926 创建失败","extra":{"order_id":42}}]'</pre>
+</div>
+
+<div class="card">
+  <h2>6. 自定义指标上报（OpenAPI）</h2>
+  <p class="muted">业务指标（队列长度、命中率等）随时推送，自动出现在指标注册表 / 大盘 / 告警可选列表：</p>
+  <pre>curl -X POST http://127.0.0.1:8014/api/ingest/metrics/ \
+  -H "Content-Type: application/json" \
+  -H "X-OBS-Token: {{ token }}" \
+  -d '{"name":"order_queue_length","value":37,"labels":{"queue":"refund"}}'</pre>
+</div>
+
+<div class="card">
+  <h2>7. Prometheus / Grafana 对接（可选）</h2>
+  <p class="muted"><code class="inline">/metrics</code> 支持会话或 Bearer 令牌两种鉴权，主机指标按 host 标签区分多台服务器：</p>
+  <pre>scrape_configs:
+  - job_name: 'observability'
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['平台IP:8014']
+    authorization:
+      type: Bearer
+      credentials: {{ token }}</pre>
+</div>
+
+<div class="card">
+  <h2>8. 生产安全建议</h2>
+  <p class="muted" style="line-height:2;">
+    ① 平台与 Agent 之间走 <b>HTTPS</b>（Nginx/Caddy 反代 + 证书），令牌不再明文过网；<br>
+    ② 用防火墙/安全组把 8014 端口限制为<b>仅自己与 Agent 所在内网可达</b>，不对公网暴露；<br>
+    ③ <code class="inline">DEBUG = False</code> 并固定 <code class="inline">ALLOWED_HOSTS</code>；<br>
+    ④ 定期轮换接入令牌与账号密码；<code class="inline">.secret_key</code> / <code class="inline">ingest_token.txt</code> 不要提交到代码仓库；<br>
+    ⑤ SQLite 适合自用规模；多用户或大流量时换 PostgreSQL。
+  </p>
+</div>
+{% endblock %}

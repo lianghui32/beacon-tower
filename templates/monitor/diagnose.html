@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}性能诊断 · 自动诊断报告{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>自动诊断报告</h1>
+  <span class="desc">静态 AST 扫描 + 采集指标动态分析 · 导出 Markdown 同款内容</span>
+  <div class="spacer"></div>
+  <a class="btn sm" href="/monitor/diagnose/export/">导出 Markdown 报告</a>
+</div>
+
+<div class="card">
+  <p class="muted" style="line-height:1.9;">
+    诊断引擎 = <b>静态扫描</b>（用 ast 解析视图源码：R1 循环内查询 / R2 未预取的外键访问 / R3 无 limit 的 all()）
+    + <b>动态指标</b>（结合中间件采集的慢请求 D1 与慢查询 D2，看最近 24 小时）。
+    每条结论包含问题位置、严重级别、推断原因与修复建议代码。规则刻意保守，"疑似"类结论请结合业务确认。
+  </p>
+  <p>
+    <span class="tag high">高：{{ report.summary.高|default:0 }}</span>
+    <span class="tag mid">中：{{ report.summary.中|default:0 }}</span>
+    <span class="tag low">低：{{ report.summary.低|default:0 }}</span>
+  </p>
+</div>
+
+{% for f in report.findings %}
+<div class="card">
+  <h2>
+    <span class="tag {% if f.severity == '高' %}high{% elif f.severity == '中' %}mid{% else %}low{% endif %}">{{ f.severity }}</span>
+    {{ f.title }} <span class="muted">（规则 {{ f.rule }}）</span>
+  </h2>
+  <table>
+    <tr><th style="width:110px;">问题位置</th>
+        <td><code class="inline">{{ f.location }}</code></td></tr>
+    <tr><th>证据</th><td><code class="inline">{{ f.evidence }}</code></td></tr>
+    <tr><th>推断原因</th><td>{{ f.cause }}</td></tr>
+    <tr><th>修复建议</th><td>
+      <pre style="margin:0;background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:6px;
+                  font-size:12px;line-height:1.7;overflow:auto;">{{ f.fix }}</pre>
+    </td></tr>
+  </table>
+</div>
+{% empty %}
+<div class="card">
+  <h2>未发现任何问题 🎉</h2>
+  <p class="muted">静态扫描与动态指标均未命中规则。可访问 /forum/chaos/ 制造一些故障再回来诊断。</p>
+</div>
+{% endfor %}
+{% endblock %}

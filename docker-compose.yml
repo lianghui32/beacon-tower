@@ -30,7 +30,9 @@ services:
   web:
     build: .
     ports:
-      - "8014:8014"
+      # 默认只绑本机回环：反代（nginx/Caddy）在本机转发即可，公网不必直连 8014。
+      # 需要直接对外时设 OBS_PUBLISH_ADDR=0.0.0.0（并自行确认防火墙与 HTTPS 卸载）
+      - "${OBS_PUBLISH_ADDR:-127.0.0.1}:8014:8014"
     environment: &web_env
       DJANGO_DEBUG: "0"
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
@@ -39,9 +41,18 @@ services:
       OBS_INGEST_TOKEN: ${OBS_INGEST_TOKEN:?请在 .env 设置 OBS_INGEST_TOKEN}
       OBS_DATABASE_URL: postgres://obs:${OBS_PG_PASSWORD}@db:5432/obs
       OBS_DISABLE_WORKERS: "1"          # web 只处理请求，后台任务全部在 worker
-      OBS_TRUST_XFORWARDED_FOR: "0"     # 仅在可信反代后设 1
+      # 仅在可信反向代理之后设 1（默认 0：否则客户端可伪造 XFF 污染 IP 统计与审计）
+      OBS_TRUST_XFORWARDED_FOR: "${OBS_TRUST_XFORWARDED_FOR:-0}"
+      # HTTPS 反代下打开：Cookie 只走 HTTPS + HSTS（默认 0，纯本机 http 演示时别开）
+      DJANGO_SECURE_COOKIES: "${DJANGO_SECURE_COOKIES:-0}"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-}"
     volumes:
-      - staticfiles:/app/staticfiles
+      # 用 bind 卷而非命名卷：collectstatic 的产物要能被宿主机上的 nginx 直接读到，
+      # 由反代伺服 /static/（DEBUG=0 时 Django 不伺服静态文件）
+      - ./staticfiles:/app/staticfiles
+      # SECRET_KEY / 接入令牌 / 演示账号凭据 / SQLite 兜底库都在 /data：
+      # 不挂卷的话容器一重建密钥就重新生成——会话全失效、已加密的授权码再也解不开
+      - obsdata:/data
     depends_on:
       db:
         condition: service_healthy
@@ -59,6 +70,8 @@ services:
     environment:
       <<: *web_env
       OBS_DISABLE_WORKERS: "0"
+    volumes:
+      - obsdata:/data      # 与 web 共用：读同一份 SECRET_KEY / 接入令牌
     depends_on:
       web:
         condition: service_started   # 等 web 先完成 migrate 再拉起任务线程
@@ -68,4 +81,4 @@ services:
 
 volumes:
   pgdata:
-  staticfiles:
+  obsdata:

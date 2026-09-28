@@ -429,9 +429,17 @@ docker compose up -d --scale worker=3     # 可选：后台任务也要高可用
   租约是租约不是围栏（fencing）：旧持有者若正跑着一轮长任务，仍可能把那一轮做完，
   所以四个任务都写成幂等（告警按策略去重合并、采集点最多多一条）；
 - 多机部署 worker 副本要求各节点时钟同步（NTP），否则过期判定随时钟漂移偏差；
-- 容器以非 root 用户运行；密钥/令牌/兜底库统一写入挂载卷（`OBS_DATA_DIR=/data`），
-  镜像内不含任何密钥（`.dockerignore` 排除全部凭据文件）；
-- 健康检查：web 容器对 `/api/health/` 探活，db 用 `pg_isready`。
+- 容器以非 root 用户运行；`SECRET_KEY` / 接入令牌 / 演示账号凭据 / SQLite 兜底库都在
+  命名卷 `obsdata:/data` 里（不挂卷的话容器一重建密钥就重新生成，会话与已加密的
+  SMTP 授权码全部失效）；镜像内不含任何密钥（`.dockerignore` 排除全部凭据文件）；
+- 静态文件：`collectstatic` 产物在 bind 卷 `./staticfiles`，由宿主机 nginx 直接伺服
+  `/static/`——`DEBUG=0` 时 Django 不处理静态文件，只反代应用会让页面丢样式与图表；
+- 反向代理场景还需在 `.env` 里显式打开 `OBS_TRUST_XFORWARDED_FOR=1`（否则客户端 IP
+  一律取连接地址，地域统计失真）与 `DJANGO_SECURE_COOKIES=1` + `DJANGO_CSRF_TRUSTED_ORIGINS`
+  （HTTPS 下 Cookie 只走加密通道并开 HSTS）；两者默认关闭，纯本机 http 演示不要开；
+- 健康检查：web 容器对 `/api/health/` 探活，db 用 `pg_isready`；
+- web 端口默认只绑宿主机 `127.0.0.1:8014`（反代在本机转发），公网不必直连应用端口；
+  确需直连时设 `OBS_PUBLISH_ADDR=0.0.0.0`。
 
 ## 十六、测试与 CI
 

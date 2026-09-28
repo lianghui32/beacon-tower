@@ -31,3 +31,6 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# collectstatic 产物（bind 卷，由反代伺服；不入库）
+staticfiles/

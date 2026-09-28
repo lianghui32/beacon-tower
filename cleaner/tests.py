@@ -14,6 +14,7 @@ cleaner/tests.py — 清理中心的"删除边界"回归测试
 import os
 import shutil
 import stat
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -100,7 +101,9 @@ class ReparseDetectionTests(TestCase):
                 self.skipTest('测试目录本身成了链接')
             with fake_junction(target):
                 self.assertTrue(services._is_reparse(target))
-                if hasattr(os.path, "isjunction"):
+                if sys.platform == 'win32':
+                    # 只在 Windows 上交叉验证标准库：POSIX 没有 Junction 概念，
+                    # posixpath.isjunction 是恒返回 False 的桩，拿它断言必挂（CI 实测）
                     self.assertTrue(os.path.isjunction(str(target)),
                                     '伪装数据本身应被标准库认出是 Junction')
             self.assertFalse(services._is_reparse(target), '撤掉伪装后应判为普通目录')

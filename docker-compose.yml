@@ -1,0 +1,71 @@
+# 烽火台 Beacon Tower · 全栈可观测运维监控平台 · 生产部署编排
+#
+# 角色划分（web 与后台任务分离）：
+#   db     PostgreSQL 16（指标/日志/告警数据的持久层）
+#   web    gunicorn 多副本对外服务，OBS_DISABLE_WORKERS=1（不跑采集/评估线程）
+#   worker 后台进程（采集/告警/拨测/巡检线程），可多副本：任务租约保证同一任务
+#          全集群只有一个进程执行，持有者宕机后其它副本自动接管
+#
+# 首次启动前：cp .env.example .env 并填入密钥
+#   docker compose up -d --build
+#   docker compose exec web python manage.py createsuperuser
+#   docker compose exec web python manage.py init_data   # 可选：演示数据
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: obs
+      POSTGRES_USER: obs
+      POSTGRES_PASSWORD: ${OBS_PG_PASSWORD:?请在 .env 设置 OBS_PG_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U obs -d obs"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      - "8014:8014"
+    environment: &web_env
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_ALLOW_ALL_HOSTS: "0"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?请在 .env 设置 DJANGO_SECRET_KEY}
+      OBS_INGEST_TOKEN: ${OBS_INGEST_TOKEN:?请在 .env 设置 OBS_INGEST_TOKEN}
+      OBS_DATABASE_URL: postgres://obs:${OBS_PG_PASSWORD}@db:5432/obs
+      OBS_DISABLE_WORKERS: "1"          # web 只处理请求，后台任务全部在 worker
+      OBS_TRUST_XFORWARDED_FOR: "0"     # 仅在可信反代后设 1
+    volumes:
+      - staticfiles:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8014/api/health/', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "manage.py", "obs_workers"]
+    environment:
+      <<: *web_env
+      OBS_DISABLE_WORKERS: "0"
+    depends_on:
+      web:
+        condition: service_started   # 等 web 先完成 migrate 再拉起任务线程
+    restart: unless-stopped
+    # 可以 docker compose up -d --scale worker=3：多副本抢同一把任务租约，
+    # 只有一个在跑，其余热待命（租约表 monitor_tasklease，见 monitor/leadership.py）
+
+volumes:
+  pgdata:
+  staticfiles:

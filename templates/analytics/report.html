@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}报表中心 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>报表中心</h1>
+  <span class="desc">周期运维报表：汇总请求 / 主机 / 前端 / 日志 / 告警</span>
+  <div class="spacer"></div>
+  <a class="btn {% if days == 1 %}btn{% else %}gray{% endif %} sm" href="/analytics/report/?days=1">日报</a>
+  <a class="btn {% if days == 7 %}btn{% else %}gray{% endif %} sm" href="/analytics/report/?days=7">周报</a>
+  <a class="btn" href="/analytics/report/export/?days={{ days }}">导出 Markdown</a>
+</div>
+
+<div class="card">
+  <h2>报表概览（最近 {{ report.days }} 天）</h2>
+  <p class="muted">统计自 {{ report.since|date:"Y-m-d H:i" }} 起 · 生成于 {{ report.generated_at|date:"Y-m-d H:i:s" }}</p>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num">{{ report.requests.total }}</div><div class="label">请求总数</div></div>
+  <div class="stat"><div class="num">{{ report.requests.avg_ms }} ms</div><div class="label">平均耗时</div></div>
+  <div class="stat"><div class="num {% if report.requests.error_rate > 1 %}warn{% endif %}">{{ report.requests.error_rate }}%</div><div class="label">错误率</div></div>
+  <div class="stat"><div class="num orange">{{ report.requests.slow_total }}</div><div class="label">慢查询条数</div></div>
+  <div class="stat"><div class="num">{{ report.rum.pv }}</div><div class="label">前端 PV</div></div>
+  <div class="stat"><div class="num">{{ report.rum.uv }}</div><div class="label">前端 UV</div></div>
+  <div class="stat"><div class="num">{{ report.rum.js_errors }}</div><div class="label">JS 错误</div></div>
+  <div class="stat"><div class="num {% if report.host.cpu_max > 80 %}warn{% endif %}">{{ report.host.cpu_max }}%</div><div class="label">CPU 峰值</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card">
+    <h2>慢接口 Top 8</h2>
+    <table>
+      <thead><tr><th>路径</th><th>请求数</th><th>平均耗时 (ms)</th><th>最慢 (ms)</th></tr></thead>
+      <tbody>
+        {% for t in report.top_slow %}
+        <tr><td><code class="inline">{{ t.path }}</code></td><td>{{ t.n }}</td>
+          <td>{{ t.avg_ms|floatformat:1 }}</td><td>{{ t.max_ms|floatformat:1 }}</td></tr>
+        {% empty %}<tr><td colspan="4" class="muted">无数据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>高频日志 Top 5</h2>
+    <table>
+      <thead><tr><th style="width:70px;">次数</th><th>消息</th></tr></thead>
+      <tbody>
+        {% for t in report.logs.top %}
+        <tr><td>{{ t.n }}</td><td style="font-size:12px;">{{ t.message }}</td></tr>
+        {% empty %}<tr><td colspan="2" class="muted">无数据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>期间告警事件（{{ report.alerts|length }} 条）</h2>
+  <table>
+    <thead><tr><th>级别</th><th>摘要</th><th>状态</th><th>触发时间</th><th>持续(分钟)</th></tr></thead>
+    <tbody>
+      {% for a in report.alerts %}
+      <tr>
+        <td><span class="tag {% if a.level == 'P0' %}p0{% elif a.level == 'P1' %}p1{% else %}p2{% endif %}">{{ a.level }}</span></td>
+        <td>{{ a.summary }}</td>
+        <td>{% if a.status == 'firing' %}<span class="tag high">触发中</span>{% else %}<span class="tag ok">已恢复</span>{% endif %}</td>
+        <td>{{ a.started_at|date:"m-d H:i" }}</td>
+        <td>{{ a.duration_min }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">期间无告警事件</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

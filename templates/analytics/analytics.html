@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}智能分析 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>智能分析工作台</h1>
+  <span class="desc">异常检测 · 趋势预测 · 相关性分析 · 日志模式挖掘（纯自研算法）</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+
+<div class="tabs">
+  <a href="javascript:void(0)" class="active" data-tab="anomaly" onclick="showTab('anomaly')">异常检测</a>
+  <a href="javascript:void(0)" data-tab="forecast" onclick="showTab('forecast')">趋势预测</a>
+  <a href="javascript:void(0)" data-tab="corr" onclick="showTab('corr')">相关性分析</a>
+  <a href="javascript:void(0)" data-tab="mine" onclick="showTab('mine')">日志挖掘</a>
+</div>
+
+<!-- ============ 异常检测 ============ -->
+<div id="tab-anomaly" class="tab-pane">
+  <div class="card">
+    <div class="filter-bar">
+      <label>检测指标
+        <select id="an-metric" style="min-width:220px;">
+          {% for c in catalog %}<option value="{{ c.key }}">{{ c.label }} · {{ c.key }}</option>{% endfor %}
+        </select>
+      </label>
+      <button class="btn" onclick="runAnomaly()">开始检测</button>
+      <span class="muted" id="an-desc"></span>
+    </div>
+    <div id="ch-anomaly" class="chart"></div>
+  </div>
+  <div class="card">
+    <h2>检出异常点 <span class="muted">（滑动窗口 3σ，算法可解释）</span></h2>
+    <table>
+      <thead><tr><th style="width:100px;">时间</th><th style="width:130px;">数值</th><th style="width:90px;">偏离 σ</th><th>说明</th></tr></thead>
+      <tbody id="an-body"><tr><td colspan="4" class="muted">先点"开始检测"</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============ 趋势预测 ============ -->
+<div id="tab-forecast" class="tab-pane" style="display:none;">
+  <div class="card">
+    <div class="filter-bar">
+      <label>预测指标
+        <select id="fc-metric" style="min-width:220px;">
+          {% for c in catalog %}<option value="{{ c.key }}">{{ c.label }} · {{ c.key }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>外推 <input type="number" id="fc-horizon" value="30" min="10" max="120" style="width:70px;"> 分钟</label>
+      <button class="btn" onclick="runForecast()">开始预测</button>
+      <span class="muted" id="fc-desc"></span>
+    </div>
+    <div id="ch-forecast" class="chart"></div>
+  </div>
+</div>
+
+<!-- ============ 相关性分析 ============ -->
+<div id="tab-corr" class="tab-pane" style="display:none;">
+  <div class="card">
+    <div class="filter-bar">
+      <button class="btn" onclick="runCorr()">计算相关系数矩阵</button>
+      <span class="muted">皮尔逊相关系数 · 取两个指标公共分钟轴（默认近 6 小时）</span>
+    </div>
+    <div id="ch-corr" class="chart sm"></div>
+    <div class="muted" id="corr-legend" style="margin-top:8px;"></div>
+  </div>
+  <div class="card">
+    <h2>显著相关对（|r| ≥ 0.5）与解读</h2>
+    <table>
+      <thead><tr><th>指标 A</th><th>指标 B</th><th style="width:90px;">r</th><th>解读</th></tr></thead>
+      <tbody id="corr-body"><tr><td colspan="4" class="muted">先点"计算"</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ============ 日志挖掘 ============ -->
+<div id="tab-mine" class="tab-pane" style="display:none;">
+  <div class="card">
+    <div class="filter-bar">
+      <button class="btn" onclick="runMine()">挖掘日志模式</button>
+      <span class="muted">把日志归并为模板（数字/ID/IP/路径替换为占位符）后聚类，找错误模式</span>
+    </div>
+    <span class="muted" id="mine-total"></span>
+    <table>
+      <thead><tr>
+        <th style="width:70px;">次数</th><th style="width:150px;">级别分布</th><th>模板 / 示例</th><th style="width:120px;">记录器</th>
+      </tr></thead>
+      <tbody id="mine-body"><tr><td colspan="4" class="muted">先点"挖掘日志模式"</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function showTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(function (el) { el.style.display = 'none'; });
+    document.getElementById('tab-' + name).style.display = 'block';
+    document.querySelectorAll('.tabs a').forEach(function (a) { a.classList.remove('active'); });
+    document.querySelector('.tabs a[data-tab="' + name + '"]').classList.add('active');
+  }
+
+  // ---------- 异常检测 ----------
+  var chAnomaly = mkChart('ch-anomaly');
+  function runAnomaly() {
+    var key = document.getElementById('an-metric').value;
+    obsGet('/analytics/api/anomaly/?metric=' + encodeURIComponent(key)
+      + '&minutes=' + getParam('minutes', 60)).then(function (d) {
+      document.getElementById('an-desc').textContent =
+        d.desc.method + '，检出 ' + d.desc.anomalies + ' / ' + d.desc.total + ' 个异常点';
+      var markPts = d.anomalies.map(function (p) {
+        return { x: p.t, y: p.v, z: p.z };
+      });
+      chAnomaly.setOption(lineOption([
+        { name: d.label, x: d.points.map(p => p.t), y: d.points.map(p => p.v),
+          area: true, markPoints: markPts },
+      ], { unit: d.unit }));
+      document.getElementById('an-body').innerHTML = d.anomalies.length
+        ? d.anomalies.slice().reverse().map(function (p) {
+            return '<tr><td>' + esc(p.t) + '</td><td><b>' + p.v + '</b></td><td>'
+              + '<span class="tag high">+' + p.z + 'σ</span></td>'
+              + '<td class="muted">显著偏离滑动窗口均值（超出 3 倍标准差）</td></tr>';
+          }).join('')
+        : '<tr><td colspan="4" class="muted">该窗口内未检出异常</td></tr>';
+    }).catch(function () {});
+  }
+
+  // ---------- 趋势预测 ----------
+  var chFc = mkChart('ch-forecast');
+  function runForecast() {
+    var key = document.getElementById('fc-metric').value;
+    var horizon = document.getElementById('fc-horizon').value || 30;
+    obsGet('/analytics/api/forecast/?metric=' + encodeURIComponent(key)
+      + '&minutes=' + getParam('minutes', 60) + '&horizon=' + horizon).then(function (d) {
+      document.getElementById('fc-desc').textContent =
+        '线性回归：趋势' + d.desc.trend + '（斜率 ' + d.desc.slope + '，R²=' + d.desc.r2 + '）· ' + d.desc.note;
+      chFc.setOption(lineOption([
+        { name: d.label + '（历史）', x: d.history.map(p => p.t), y: d.history.map(p => p.v), area: true },
+        { name: '预测', x: d.future.map(p => p.t), y: d.future.map(p => p.v), color: '#dc2626' },
+      ], { unit: d.unit }));
+    }).catch(function () {});
+  }
+
+  // ---------- 相关性分析 ----------
+  var chCorr = mkChart('ch-corr');
+  function runCorr() {
+    obsGet('/analytics/api/correlation/?minutes=' + getParam('minutes', 360)).then(function (d) {
+      var data = [];
+      for (var i = 0; i < d.keys.length; i++)
+        for (var j = 0; j < d.keys.length; j++)
+          data.push([j, i, d.matrix[i][j] == null ? '-' : d.matrix[i][j]]);
+      chCorr.setOption({
+        tooltip: { position: 'top', formatter: function (p) {
+          // 指标 key 可能含外部上报的自定义指标名，转义防 XSS
+          return esc(d.keys[p.value[1]]) + ' × ' + esc(d.keys[p.value[0]]) + '<br>r = ' + p.value[2];
+        } },
+        grid: { left: 150, right: 60, top: 30, bottom: 110 },
+        xAxis: { type: 'category', data: d.keys, axisLabel: { rotate: 40, fontSize: 10 } },
+        yAxis: { type: 'category', data: d.keys, axisLabel: { fontSize: 10 } },
+        visualMap: { min: -1, max: 1, calculable: true, orient: 'vertical',
+                     right: 0, top: 'center', inRange: { color: ['#2563eb', '#fff', '#dc2626'] } },
+        series: [{ type: 'heatmap', data: data.filter(x => x[2] !== '-'),
+                   label: { show: true, fontSize: 9 } }],
+      });
+      document.getElementById('corr-body').innerHTML = d.pairs.length
+        ? d.pairs.map(function (p) {
+            var strength = Math.abs(p.r) > 0.8 ? '强' : '中等';
+            var direction = p.r > 0 ? '同向变化' : '反向变化';
+            return '<tr><td><code class="inline">' + esc(p.a) + '</code></td>'
+              + '<td><code class="inline">' + esc(p.b) + '</code></td>'
+              + '<td><span class="tag ' + (Math.abs(p.r) > 0.8 ? 'high' : 'mid') + '">' + p.r + '</span></td>'
+              + '<td class="muted">' + strength + '相关（' + direction + '）</td></tr>';
+          }).join('')
+        : '<tr><td colspan="4" class="muted">未发现显著相关（|r|≥0.5）</td></tr>';
+    }).catch(function () {});
+  }
+
+  // ---------- 日志挖掘 ----------
+  function runMine() {
+    obsGet('/analytics/api/logmining/?minutes=' + getParam('minutes', 720)).then(function (d) {
+      document.getElementById('mine-total').textContent = '分析范围共 ' + d.total + ' 条日志';
+      document.getElementById('mine-body').innerHTML = d.patterns.length ? d.patterns.map(function (p) {
+        var lv = Object.keys(p.levels).map(function (k) {
+          var cls = { ERROR: 'high', CRITICAL: 'high', WARNING: 'mid' }[k] || 'low';
+          return '<span class="tag ' + cls + '">' + k + '×' + p.levels[k] + '</span>';
+        }).join(' ');
+        return '<tr><td><b>' + p.n + '</b></td><td>' + lv + '</td>'
+          + '<td style="font-size:12px;"><code class="inline">' + esc(p.pattern.slice(0, 90))
+          + '</code><br><span class="muted">示例：' + esc(p.sample.slice(0, 100)) + '</span></td>'
+          + '<td class="muted">' + esc(p.loggers.join(', ')) + '</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="muted">范围内无日志</td></tr>';
+    }).catch(function () {});
+  }
+</script>
+{% endblock %}

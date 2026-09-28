@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}IP 访问地图 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>IP 访问地图</h1>
+  <span class="desc">访客从哪来 · 何时访问 · 访问了什么（归属解析：{{ backend }}）</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num" id="s-pv">-</div><div class="label">访问总数 PV</div></div>
+  <div class="stat"><div class="num" id="s-ip">-</div><div class="label">独立访客 IP</div></div>
+  <div class="stat"><div class="num" id="s-new">-</div><div class="label">新增 IP（首次出现在本窗口）</div></div>
+  <div class="stat"><div class="num" id="s-lan">-</div><div class="label">局域网 IP 数</div></div>
+  <div class="stat"><div class="num orange" id="s-prov">-</div><div class="label">访问最多的省份</div></div>
+  <div class="stat"><div class="num" id="s-peak">-</div><div class="label">访问最活跃时段</div></div>
+</div>
+<div class="cards" style="margin-top:14px;">
+  <div class="stat"><div class="num" id="s-opv">-</div><div class="label">海外 PV</div></div>
+  <div class="stat"><div class="num" id="s-oratio">-</div><div class="label">海外占比 (%)</div></div>
+  <div class="stat"><div class="num orange" id="s-country">-</div><div class="label">访问最多的国家</div></div>
+  <div class="stat"><div class="num" id="s-ocount">-</div><div class="label">海外国家 / 地区数</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card">
+    <h2>
+      <span id="map-title">访客地域分布（PV 热力）</span>
+      <span style="float:right;">
+        <button class="btn sm" id="btn-cn" onclick="switchView('cn')">🇨🇳 中国</button>
+        <button class="btn gray sm" id="btn-world" onclick="switchView('world')">🌍 海外</button>
+      </span>
+    </h2>
+    <div id="ch-map" style="width:100%;height:470px;"></div>
+  </div>
+  <div>
+    <div class="card"><h2 id="rank-title">省份排行</h2><div id="ch-rank" class="chart sm"></div></div>
+    <div class="card"><h2>访问时段分布（PV / 独立IP）</h2><div id="ch-hour" class="chart sm"></div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2 id="heat-title">访问时段热力：Top5 省份 × 小时 <span class="muted">（何时访问、哪里最活跃）</span></h2>
+  <div id="ch-heat" class="chart"></div>
+</div>
+
+<div class="card">
+  <h2>Top 20 访客 IP · 访问行为</h2>
+  <table>
+    <thead><tr>
+      <th>IP</th><th>归属地</th><th>请求数</th><th>访问路径数</th><th>最常访问</th>
+      <th>平均耗时(ms)</th><th>错误率(%)</th><th>活跃峰值</th><th>首次</th><th>最近</th>
+    </tr></thead>
+    <tbody id="ip-body"><tr><td colspan="10" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chRank = mkChart('ch-rank'), chHour = mkChart('ch-hour'), chHeat = mkChart('ch-heat');
+  var mapChart = null;
+  var geoView = 'cn';          // cn | world
+  var geoData = null;          // 最近一次 API 数据
+  var mapsReady = { china: false, world: false };
+
+  function switchView(v) {
+    geoView = v;
+    document.getElementById('btn-cn').className = v === 'cn' ? 'btn sm' : 'btn gray sm';
+    document.getElementById('btn-world').className = v === 'world' ? 'btn sm' : 'btn gray sm';
+    if (geoData) renderAll();
+  }
+
+  function refresh() {
+    obsGet('/analytics/api/geo/?minutes=' + getParam('minutes', 1440)).then(function (d) {
+      geoData = d;
+      var s = d.summary;
+      document.getElementById('s-pv').textContent = s.total_pv;
+      document.getElementById('s-ip').textContent = s.ip_count;
+      document.getElementById('s-new').textContent = s.new_ips;
+      document.getElementById('s-lan').textContent = s.lan_ips;
+      document.getElementById('s-prov').textContent = s.top_province;
+      document.getElementById('s-peak').textContent = s.peak_hour + '点';
+      document.getElementById('s-opv').textContent = s.overseas_pv;
+      document.getElementById('s-oratio').textContent = s.overseas_ratio;
+      document.getElementById('s-country').textContent = s.top_country;
+      document.getElementById('s-ocount').textContent = s.overseas_countries;
+
+      chHour.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['PV', '独立IP'], textStyle: { fontSize: 11 } },
+        grid: { left: 45, right: 20, top: 36, bottom: 28 },
+        xAxis: { type: 'category', data: d.hourly.map(x => x.hour + '时') },
+        yAxis: { type: 'value' },
+        series: [
+          { name: 'PV', type: 'bar', data: d.hourly.map(x => x.pv), itemStyle: { color: '#2563eb' }, barMaxWidth: 18 },
+          { name: '独立IP', type: 'line', smooth: true, data: d.hourly.map(x => x.uv), itemStyle: { color: '#ea580c' } },
+        ],
+      });
+
+      renderAll();
+      renderIpTable(d);
+    }).catch(function () {});
+  }
+
+  function renderAll() {
+    var d = geoData;
+    if (geoView === 'cn') {
+      document.getElementById('map-title').textContent = '访客地域分布（PV 热力）';
+      document.getElementById('rank-title').textContent = '省份排行';
+      document.getElementById('heat-title').innerHTML =
+        '访问时段热力：Top5 省份 × 小时 <span class="muted">（何时访问、哪里最活跃）</span>';
+      chRank.setOption(barOption(d.top_provinces.map(p => p.name),
+        d.top_provinces.map(p => p.pv), { rotate: 30, bottom: 50 }));
+      renderHeat(d.heat.provinces, d.heat.data);
+      loadMap('china', d.map);
+    } else {
+      document.getElementById('map-title').textContent = '海外访客分布（PV 热力）';
+      document.getElementById('rank-title').textContent = '国家排行';
+      document.getElementById('heat-title').innerHTML =
+        '访问时段热力：Top5 国家 × 小时 <span class="muted">（海外访客何时访问、哪里最活跃）</span>';
+      chRank.setOption(barOption(d.top_countries.map(p => p.name),
+        d.top_countries.map(p => p.pv), { rotate: 30, bottom: 50 }));
+      renderHeat(d.heat_world.countries, d.heat_world.data);
+      loadMap('world', d.world);
+    }
+  }
+
+  function renderHeat(names, data) {
+    var heatMax = 1;
+    data.forEach(x => { heatMax = Math.max(heatMax, x[2]); });
+    var hours = geoData ? geoData.heat.hours : [];
+    chHeat.setOption({
+      tooltip: { position: 'top', formatter: p => names[p.value[1]] + ' ' + hours[p.value[0]] + '：' + p.value[2] + ' 次' },
+      grid: { left: 90, right: 70, top: 20, bottom: 60 },
+      xAxis: { type: 'category', data: hours, splitArea: { show: true } },
+      yAxis: { type: 'category', data: names, splitArea: { show: true } },
+      visualMap: { min: 0, max: heatMax, calculable: true, orient: 'vertical',
+                   right: 0, top: 'center', inRange: { color: ['#fff', '#93c5fd', '#2563eb'] } },
+      series: [{ type: 'heatmap', data: data, label: { show: true, fontSize: 9 } }],
+    });
+  }
+
+  function renderIpTable(d) {
+    document.getElementById('ip-body').innerHTML = d.top_ips.length ? d.top_ips.map(function (r) {
+      return '<tr><td><code class="inline">' + esc(r.ip) + '</code></td><td>' + esc(r.region) + '</td>'
+        + '<td><b>' + r.n + '</b></td><td>' + r.paths_cnt + '</td>'
+        + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">'
+        + esc(r.top_path) + '</td><td>' + r.avg_ms + '</td>'
+        + '<td>' + (r.err_rate > 0 ? '<span class="tag high">' + r.err_rate + '</span>' : '0') + '</td>'
+        + '<td>' + esc(String(r.peak_hour)) + '时</td><td>' + esc(r.first) + '</td><td>' + esc(r.last) + '</td></tr>';
+    }).join('') : '<tr><td colspan="10" class="muted">窗口内暂无访问数据</td></tr>';
+  }
+
+  // ---------- 地图（GeoJSON 惰性加载并缓存） ----------
+  function loadMap(mapName, data) {
+    if (mapsReady[mapName]) { renderMap(mapName, data); return; }
+    var file = mapName === 'china' ? 'china.json' : 'world.json';
+    fetch('/static/geo/' + file).then(r => r.json()).then(function (geo) {
+      echarts.registerMap(mapName, geo);
+      mapsReady[mapName] = true;
+      renderMap(mapName, data);
+    }).catch(function () {
+      document.getElementById('ch-map').innerHTML =
+        '<p class="muted" style="padding:40px;text-align:center;">地图数据 static/geo/' + file + ' 加载失败，排行图仍可用。</p>';
+    });
+  }
+
+  function renderMap(mapName, data) {
+    var el = document.getElementById('ch-map');
+    if (!data) data = [];
+    if (!mapChart || mapChart.__mapName !== mapName) {
+      if (mapChart) mapChart.dispose();
+      mapChart = echarts.init(el);
+      mapChart.__mapName = mapName;
+    }
+    var maxV = 1;
+    data.forEach(x => { maxV = Math.max(maxV, x.value); });
+    mapChart.setOption({
+      tooltip: { formatter: p => (p.value ? p.name + '：' + p.value + ' 次访问' : p.name + '：暂无') },
+      visualMap: { min: 0, max: maxV, left: 12, bottom: 12, text: ['高', '低'],
+                   inRange: { color: ['#e0ecff', '#93c5fd', '#2563eb', '#1e3a8a'] } },
+      series: [{
+        type: 'map', map: mapName, roam: true,
+        zoom: mapName === 'china' ? 1.12 : 1.15,
+        top: mapName === 'world' ? 30 : 10,
+        label: { show: mapName === 'china', fontSize: 9, color: '#334155' },
+        emphasis: { label: { show: true, fontSize: 10 }, itemStyle: { areaColor: '#fbbf24' } },
+        data: data,
+      }],
+    });
+  }
+
+  poll(refresh, 20000);
+</script>
+{% endblock %}

@@ -6,7 +6,7 @@
 [![CI](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Django](https://img.shields.io/badge/Django-5.2-44B78B?logo=django&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-121%20passing-2EA043)
+![Tests](https://img.shields.io/badge/tests-122%20passing-2EA043)
 ![Docker](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -17,7 +17,7 @@
 > 内置**整站登录认证**与**接入令牌**，支持通过自研 Agent 接入**多台服务器**。
 > 开发端口：**8014**。
 
-### 效果预览（截图取自线上实例）
+### 效果预览（截图取自线上实例，用登录页公开的只读演示账号浏览）
 
 | 监控总览 | APM 接口分析 |
 |---|---|
@@ -26,6 +26,19 @@
 | ![调用链](docs/screenshots/trace.png) | ![相关性](docs/screenshots/analytics_corr.png) |
 | **主机监控（psutil 真实读数）** | **日志查询** |
 | ![主机](docs/screenshots/host.png) | ![日志](docs/screenshots/logs.png) |
+| **数据库分析（慢查询模板归并）** | **告警事件** |
+| ![数据库](docs/screenshots/database.png) | ![告警](docs/screenshots/alerts.png) |
+| **异常检测（滑动 3σ）** | **AST 静态诊断** |
+| ![异常](docs/screenshots/analytics_anomaly.png) | ![诊断](docs/screenshots/diagnose.png) |
+| **IP 访问地图（省份热力）** | **前端 RUM 数据总览** |
+| ![地图](docs/screenshots/geo.png) | ![RUM](docs/screenshots/rum.png) |
+| **SLO 错误预算燃尽** | **自定义大盘** |
+| ![SLO](docs/screenshots/ops_slo.png) | ![大盘](docs/screenshots/dashboard_custom.png) |
+
+另有几张同样可点开：**[巡检中心](docs/screenshots/ops_inspection.png)**（健康评分与耗尽预测）、
+**[报表中心](docs/screenshots/analytics_report.png)**（周期汇总）、
+**[拨测监控](docs/screenshots/probe.png)**、**[清理加速中心](docs/screenshots/cleaner.png)**
+（后两张是 staff 专属页面，截图取自侧边栏改版前）。
 
 ## 一、项目背景（从"性能监控"到"可观测平台"）
 
@@ -80,9 +93,9 @@
 |---|---|---|
 | 语言 | Python 3.10+ | |
 | Web 框架 | Django 5.2 | 核心框架 |
-| 数据库 | SQLite（演示零配置）/ PostgreSQL 16（生产） | `OBS_DATABASE_URL` 一键切换 |
-| 应用服务器 | runserver（开发）/ gunicorn（生产） | Docker Compose 一键编排 |
-| 测试 | Django TestCase × 52 | 算法/脱敏/限速/告警引擎/鉴权/追踪全覆盖，CI 自动执行 |
+| 数据库 | SQLite（演示零配置）/ PostgreSQL（生产） | `OBS_DATABASE_URL` 一键切换；线上实例是宿主 PostgreSQL 18 |
+| 应用服务器 | runserver（开发）/ gunicorn（生产） | Docker Compose 编排，或无 Docker 的 systemd 托管（线上实例用的就是这个） |
+| 测试 | Django TestCase × 122 | 算法/脱敏/限速/告警引擎/鉴权/追踪/缓冲/租约/删除边界全覆盖，CI 自动执行 |
 | CI | GitHub Actions | ruff 静态检查 + 系统检查 + migration 完整性 + 全量测试 |
 | 主机采集 | psutil | 唯一推荐依赖；未安装自动降级为模拟指标 |
 | 图表 | ECharts 5 | **本地自托管**（static/echarts.min.js），无 CDN 依赖 |
@@ -139,10 +152,17 @@ python manage.py runserver 8014
 | `DJANGO_DEBUG=0` | 关闭调试页（默认 `1` 便于演示），并自动启用安全响应头 |
 | `DJANGO_ALLOWED_HOSTS` | 逗号分隔的合法 Host，如 `obs.example.com,10.0.0.5` |
 | `DJANGO_ALLOW_ALL_HOSTS=0` | 关闭默认的 `*` 兜底（演示用） |
+| `OBS_DATABASE_URL` | `postgres://user:pass@host:5432/db` 切到 PostgreSQL；不设则用 SQLite（WAL） |
+| `OBS_DATA_DIR` | 接入令牌 / 演示凭据 / SQLite 兜底库的落盘目录（代码树对服务用户只读时必须指到可写目录） |
+| `OBS_STATIC_ROOT` | `collectstatic` 输出目录；`DEBUG=0` 时由反代从同一位置伺服 `/static/` |
 | `OBS_INGEST_TOKEN` | 覆盖自动生成的接入令牌 |
+| `OBS_METRIC_BUFFER=0` | 关掉请求指标批量缓冲，退回逐条同步写库（牺牲 p99 换"写完即可读"） |
+| `OBS_METRIC_BUFFER_BATCH` / `_FLUSH_SEC` / `_QUEUE_SIZE` | 批量落库的三个阈值：攒满多少条 / 多久刷一次 / 队列上限（默认 200 条 / 1 秒 / 20000） |
 | `OBS_WORKERS_ENABLED` | 强制指定/排除某进程参与后台任务（`1`/`0`）；不设时由租约选主决定谁干活 |
 | `OBS_LEASE_TTL_SEC` | 后台任务租约时长（默认 60）：持有者宕机后其它副本最长等这么久接管 |
 | `OBS_TRUST_XFORWARDED_FOR=1` | 仅在可信反向代理后开启，否则客户端可伪造 IP 污染统计与审计 |
+| `DJANGO_SECURE_COOKIES=1` + `DJANGO_CSRF_TRUSTED_ORIGINS` | HTTPS 部署两项都要开：Cookie 只走加密通道、CSRF 信任源显式列白名单 |
+| `OBS_SHOW_DEMO_ACCOUNT=1` | 登录页公开展示只读演示账号密码（默认跟随 `DEBUG`，对外演示才开） |
 | `OBS_HEAL_CMD_ALLOWLIST` | 自愈 command 白名单（可执行文件绝对路径，Windows 分号/Unix 冒号分隔），**不配置则 command 类型禁用** |
 | `OBS_ALLOW_LOOPBACK_URL` / `OBS_ALLOW_PRIVATE_URL` | 出站拨测/回调允许环回/私网目标（默认允许，内网拨测需要） |
 | `OBS_INSPECT_INTERVAL_HOURS` | 定时巡检周期（默认 12） |
@@ -323,7 +343,7 @@ scrape_configs:
 │   ├── metrics.py              #   Prometheus 文本输出（含采集管道与租约自观测）
 │   ├── diagnoser.py            #   AST 静态诊断引擎（核心创新保留）
 │   ├── workers.py              #   后台线程启动器（幂等）
-│   ├── tests.py                #   链路/门禁/缓冲/租约回归（52+ 例）
+│   ├── tests.py                #   链路/门禁/缓冲/租约回归（40 例）
 │   └── management/commands/
 │       ├── init_data.py        #   全观测域演示数据种子
 │       ├── obs_workers.py      #   worker 角色（副本数不限，内部选主）
@@ -357,7 +377,7 @@ scrape_configs:
 6. **问题版/优化版同框对比**（继承自前身项目）：同一论坛页面的两种实现，页面底部实时显示 SQL 次数与耗时，配合压测输出量化对比。
 7. **运维闭环延伸到"机器本身"**：巡检给出健康评分与容量耗尽预测，自愈执行白名单处置，清理加速中心做磁盘分析/垃圾清理/内存整理——监控不止于"看"，还能"治"。
 8. **安全工程贯穿全程**：四类对手威胁模型 + 三轮红队审查闭环（每轮发现→修复→回归实测），安全白皮书（SECURITY.md）记录全部防护设计与验证方法，可复现、可审计。
-9. **工程化成熟度**：121 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
+9. **工程化成熟度**：122 个测试用例 + GitHub Actions CI（lint/检查/migration 完整性/测试）、
    Docker Compose 三角色生产编排（web/worker/db 分离）、后台任务租约选主（多副本只跑一份，持有者宕机自动接管）、
    采集写路径与请求路径解耦（批量缓冲 + 丢弃计数自观测 + 退出排空）、
    W3C Trace Context 跨服务链路语义、告警 for-duration/恢复迟滞/静默等生产语义、
@@ -483,7 +503,7 @@ systemctl enable --now beacon.service beacon-worker.service
 ## 十六、测试与 CI
 
 ```bash
-python manage.py test          # 121 个用例，SQLite 内存库，无需外部服务
+python manage.py test          # 122 个用例，SQLite 内存库，无需外部服务
 python -m ruff check .         # 静态检查（ruff.toml）
 ```
 

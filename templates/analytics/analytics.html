@@ -62,7 +62,7 @@
       <button class="btn" onclick="runCorr()">计算相关系数矩阵</button>
       <span class="muted">皮尔逊相关系数 · 取两个指标公共分钟轴（默认近 6 小时）</span>
     </div>
-    <div id="ch-corr" class="chart sm"></div>
+    <div id="ch-corr" class="chart" style="height:430px;"></div>
     <div class="muted" id="corr-legend" style="margin-top:8px;"></div>
   </div>
   <div class="card">
@@ -96,9 +96,30 @@
 <script>
   function showTab(name) {
     document.querySelectorAll('.tab-pane').forEach(function (el) { el.style.display = 'none'; });
-    document.getElementById('tab-' + name).style.display = 'block';
+    var pane = document.getElementById('tab-' + name);
+    pane.style.display = 'block';
     document.querySelectorAll('.tabs a').forEach(function (a) { a.classList.remove('active'); });
     document.querySelector('.tabs a[data-tab="' + name + '"]').classList.add('active');
+    // 面板隐藏期间 ECharts 量到的是 0 宽度（init 时就是如此），显示后必须重算尺寸，
+    // 否则热力图会挤在左边一条里、标签互相压字
+    pane.querySelectorAll('.chart').forEach(function (el) {
+      var inst = echarts.getInstanceByDom(el);
+      if (inst) inst.resize();
+    });
+  }
+
+  // 指标 key → 中文短名（注册表标签去掉单位），让矩阵轴标签读得懂。
+  // 用 json_script 而不是把 catalog 拼进 JS 字面量：自定义指标名可由上报接口写入，
+  // 走 JSON 序列化才不用担心引号与 </script> 这类破坏脚本的东西。
+  {{ catalog|json_script:"metric-catalog" }}
+  var METRIC_LABELS = {};
+  try {
+    (JSON.parse(document.getElementById('metric-catalog').textContent) || [])
+      .forEach(function (c) { METRIC_LABELS[c.key] = c.label; });
+  } catch (e) { /* 拿不到就退回显示原始 key */ }
+  function shortKey(k) {
+    var l = METRIC_LABELS[k];
+    return l ? l.split(' (')[0] : k;
   }
 
   // ---------- 异常检测 ----------
@@ -150,18 +171,26 @@
       for (var i = 0; i < d.keys.length; i++)
         for (var j = 0; j < d.keys.length; j++)
           data.push([j, i, d.matrix[i][j] == null ? '-' : d.matrix[i][j]]);
+      chCorr.resize();   // 本图在隐藏面板里 init 过，绘制前再确认一次尺寸
       chCorr.setOption({
         tooltip: { position: 'top', formatter: function (p) {
           // 指标 key 可能含外部上报的自定义指标名，转义防 XSS
           return esc(d.keys[p.value[1]]) + ' × ' + esc(d.keys[p.value[0]]) + '<br>r = ' + p.value[2];
         } },
-        grid: { left: 150, right: 60, top: 30, bottom: 110 },
-        xAxis: { type: 'category', data: d.keys, axisLabel: { rotate: 40, fontSize: 10 } },
-        yAxis: { type: 'category', data: d.keys, axisLabel: { fontSize: 10 } },
+        grid: { left: 132, right: 96, top: 20, bottom: 124 },
+        xAxis: { type: 'category', data: d.keys.map(shortKey),
+                 axisLabel: { rotate: 35, fontSize: 11, interval: 0 },
+                 splitArea: { show: true } },
+        yAxis: { type: 'category', data: d.keys.map(shortKey),
+                 axisLabel: { fontSize: 11, interval: 0 }, splitArea: { show: true } },
         visualMap: { min: -1, max: 1, calculable: true, orient: 'vertical',
-                     right: 0, top: 'center', inRange: { color: ['#2563eb', '#fff', '#dc2626'] } },
+                     right: 10, top: 'center', itemHeight: 180,
+                     inRange: { color: ['#2563eb', '#f8fafc', '#dc2626'] } },
         series: [{ type: 'heatmap', data: data.filter(x => x[2] !== '-'),
-                   label: { show: true, fontSize: 9 } }],
+                   itemStyle: { borderColor: '#fff', borderWidth: 1 },
+                   label: { show: true, fontSize: 10, formatter: function (p) {
+                     return Number(p.value[2]).toFixed(2);
+                   } } }],
       });
       document.getElementById('corr-body').innerHTML = d.pairs.length
         ? d.pairs.map(function (p) {

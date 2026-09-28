@@ -132,3 +132,28 @@ class LogMiningTests(TestCase):
         out = mine_log_patterns(entries)
         self.assertEqual(out[0]['pattern'], 'a <N>')
         self.assertEqual(out[0]['n'], 5)
+
+
+class AnalyticsPageInjectionTests(TestCase):
+    """分析页会把指标目录塞进页面脚本（相关性矩阵的轴标签用）。
+
+    自定义指标名可以来自 /api/ingest/metrics/ 上报，属于外部输入：
+    名字里带 </script> 必须被转义，不能截断页面脚本——这正是用 json_script
+    而不是把 catalog 手工拼进 JS 字面量的理由。
+    """
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        user = User.objects.create_user('an-viewer', '', 'an-pass-9527')
+        self.client.force_login(user)
+
+    def test_custom_metric_name_cannot_break_out_of_script(self):
+        from django.utils import timezone
+        from monitor.models import CustomMetric
+        evil = '</script><script>alert(1)</script>'
+        CustomMetric.objects.create(name=evil, value=1, created_at=timezone.now())
+        html = self.client.get('/analytics/').content.decode('utf-8')
+        self.assertNotIn('</script><script>alert', html, '指标名逃逸出了 JSON 块')
+        # json.dumps 把 < > 转成 \u003C \u003E（大小写都见过，别把断言绑死在一种上）
+        self.assertRegex(html, r'\\u003[cC]/script', 'JSON 块里应看到被转义的尖括号')
+        self.assertEqual(html.count('alert(1)</script>'), 0, '出现了可执行的脚本闭合拼接')

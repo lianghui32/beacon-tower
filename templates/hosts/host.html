@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}主机监控 · 全栈可观测平台{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>主机监控</h1>
+  <span class="desc">psutil 真实采集 · 每 15 秒一个采样点 · 数据 10 秒自动刷新</span>
+  <div class="spacer"></div>
+  <label>主机
+    <select id="host-sel" style="min-width:160px;">
+      {% for h in hosts %}<option value="{{ h }}" {% if h == hostname %}selected{% endif %}>{{ h }}</option>{% endfor %}
+      {% if not hosts %}<option value="">暂无主机数据</option>{% endif %}
+    </select>
+  </label>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+
+<div class="cards">
+  <div class="stat"><div class="num" id="h-cpu">-</div><div class="label">CPU 使用率 (%)</div></div>
+  <div class="stat"><div class="num" id="h-load">-</div><div class="label">负载 (1min)</div></div>
+  <div class="stat"><div class="num" id="h-mem">-</div><div class="label">内存使用率 (%)</div></div>
+  <div class="stat"><div class="num" id="h-memtxt">-</div><div class="label">内存 已用/总量 (GB)</div></div>
+  <div class="stat"><div class="num" id="h-disk">-</div><div class="label">系统盘 (%)</div></div>
+  <div class="stat"><div class="num" id="h-net">-</div><div class="label">↓/↑ (KB/s)</div></div>
+  <div class="stat"><div class="num" id="h-proc">-</div><div class="label">进程 / TCP 连接</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card"><h2>CPU 使用率趋势</h2><div id="ch-cpu" class="chart"></div></div>
+  <div class="card"><h2>内存使用率趋势</h2><div id="ch-mem" class="chart"></div></div>
+  <div class="card"><h2>网络流量（KB/s）</h2><div id="ch-net" class="chart"></div></div>
+  <div class="card"><h2>系统盘使用率</h2><div id="ch-disk" class="chart"></div></div>
+</div>
+
+<div class="card">
+  <h2>资源占用 Top 10 进程 <span class="muted" id="proc-note">（仅平台本机提供进程明细；远程主机 Agent 不上报进程列表）</span></h2>
+  <table>
+    <thead><tr><th>PID</th><th>进程名</th><th>CPU (%)</th><th>内存 (%)</th></tr></thead>
+    <tbody id="proc-body"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chCpu = mkChart('ch-cpu'), chMem = mkChart('ch-mem'),
+      chNet = mkChart('ch-net'), chDisk = mkChart('ch-disk');
+  document.getElementById('host-sel').onchange = function () {
+    var usp = new URLSearchParams(location.search);
+    usp.set('hostname', this.value);
+    location.search = usp.toString();
+  };
+
+  function refresh() {
+    var q = new URLSearchParams({ minutes: getParam('minutes', 60) });
+    if (getParam('hostname', '')) q.set('hostname', getParam('hostname'));
+    obsGet('/hosts/api/?' + q).then(function (d) {
+      var s = d.summary;
+      if (!s) return;
+      document.getElementById('h-cpu').textContent = s.cpu;
+      document.getElementById('h-load').textContent = s.load;
+      document.getElementById('h-mem').textContent = s.mem_percent;
+      document.getElementById('h-memtxt').textContent = s.mem_used_gb + ' / ' + s.mem_total_gb;
+      document.getElementById('h-disk').textContent = s.disk_percent;
+      document.getElementById('h-net').textContent = s.net_recv_kbps + ' / ' + s.net_sent_kbps;
+      document.getElementById('h-proc').textContent = s.proc_count + ' / ' + s.tcp_conns;
+
+      chCpu.setOption(lineOption([
+        { name: 'CPU %', x: d.cpu.map(p => p.t), y: d.cpu.map(p => p.v), area: true, color: '#7c3aed' },
+        { name: '负载', x: d.load.map(p => p.t), y: d.load.map(p => p.v), color: '#ea580c' },
+      ], { unit: '%' }));
+      chMem.setOption(lineOption([
+        { name: '内存 %', x: d.mem.map(p => p.t), y: d.mem.map(p => p.v), area: true, color: '#0891b2', markLine: 85 },
+      ], { unit: '%' }));
+      chNet.setOption(lineOption([
+        { name: '下行 KB/s', x: d.net_recv.map(p => p.t), y: d.net_recv.map(p => p.v), area: true },
+        { name: '上行 KB/s', x: d.net_sent.map(p => p.t), y: d.net_sent.map(p => p.v), color: '#16a34a' },
+      ]));
+      chDisk.setOption(lineOption([
+        { name: '磁盘 %', x: d.disk.map(p => p.t), y: d.disk.map(p => p.v), color: '#64748b' },
+      ], { unit: '%' }));
+
+      var pb = document.getElementById('proc-body');
+      pb.innerHTML = d.procs.length ? d.procs.map(function (p) {
+        return '<tr><td>' + p.pid + '</td><td>' + esc(p.name) + '</td><td>' + p.cpu + '</td><td>' + p.mem + '</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="muted">'
+        + (d.is_local ? '无法读取进程列表' : '远程主机（' + esc(d.hostname) + '）不采集进程明细') + '</td></tr>';
+    }).catch(function () {});
+  }
+  poll(refresh, 10000);
+</script>
+{% endblock %}

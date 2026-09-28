@@ -1,6 +1,7 @@
 # 烽火台 Beacon Tower · 全栈可观测运维监控平台
 
 **GitHub 仓库**：<https://github.com/lianghui32/beacon-tower>
+**在线演示**：<https://beacon.lianghui.vip>（只读演示账号与密码直接显示在登录页；数据为演示种子 + 真实自采集）
 
 [![CI](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/lianghui32/beacon-tower/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
@@ -444,6 +445,30 @@ docker compose up -d --scale worker=3     # 可选：后台任务也要高可用
 - 健康检查：web 容器对 `/api/health/` 探活，db 用 `pg_isready`；
 - web 端口默认只绑宿主机 `127.0.0.1:8014`（反代在本机转发），公网不必直连应用端口；
   确需直连时设 `OBS_PUBLISH_ADDR=0.0.0.0`。
+
+### 无 Docker 的 systemd 形态（本仓库线上实例用的就是这个）
+
+线上那台机器上已经有宿主 PostgreSQL 与 nginx、且没装 Docker，再塞一套容器只是白占内存，
+所以同一份代码也支持直接 systemd 托管：
+
+```bash
+python3 -m venv /opt/beacon-tower/.venv && .venv/bin/pip install -r requirements-prod.txt
+# /etc/beacon.env 里放 DJANGO_* 与 OBS_* 环境变量（EnvironmentFile 格式）
+# 两个单元：gunicorn 对外 127.0.0.1:8014；另一个跑 python manage.py obs_workers
+systemctl enable --now beacon.service beacon-worker.service
+```
+
+要点：
+- **gunicorn 用单进程多线程**（`--workers 1 --threads 4`）而不是多进程：限速与登录锁定
+  目前是进程内 cache，开 N 个 worker 等于把限额放大 N 倍。要横向扩就先换 Redis cache，
+  而不是先加 worker；
+- 后台任务仍由 `obs_workers` 单独一个进程承担，与 web 分离；多副本时租约选主照样生效；
+- 代码树归 root、服务用户只读时，`OBS_STATIC_ROOT` 与 `OBS_DATA_DIR` 必须指到可写目录
+  （静态文件由 nginx 伺服，见上文）；
+- 走 Cloudflare 橙云时，nginx 要配 `set_real_ip_from` + `real_ip_header X-Forwarded-For`，
+  应用侧设 `OBS_TRUST_XFORWARDED_FOR=1`；两者缺一，访客就全被记成 CF 出口 IP，
+  按 IP 的限速会大面积误伤，IP 地域分析也就没有意义了。源站证书用 CF 的 Origin CA
+  （SSL/TLS 模式 Full strict），私钥在源站本地生成、不经外部传递。
 
 ## 十六、测试与 CI
 

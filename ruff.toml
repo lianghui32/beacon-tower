@@ -1,0 +1,18 @@
+# ruff：CI 与本地共用的静态检查配置（与现有代码风格对齐，宽松起步）
+target-version = "py310"
+line-length = 110
+
+exclude = ["migrations", "static", "venv", ".venv", "展示图片"]
+
+[lint]
+# E/W 基础 pycodestyle + F 逻辑错误；B 常见陷阱；UP 过时写法
+select = ["E", "F", "W", "B", "UP"]
+ignore = [
+    "E501",  # 行宽交给 line-length 之上的例外（中文注释常超）
+]
+
+[lint.per-file-ignores]
+"**/tests.py" = ["B011"]  # 测试里 assert False 类模式不受限
+
+[format]
+quote-style = "single"

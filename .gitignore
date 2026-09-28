@@ -1,0 +1,33 @@
+# ===== 机密与本地状态（勿提交）=====
+# 注意：gitignore 不支持行内注释，注释必须独占一行
+ingest_token.txt
+.secret_key
+demo_credentials.txt
+ops_credentials.txt
+admin_credentials.txt
+.env
+*.mmdb
+qqwry.dat
+
+# ===== 数据库 =====
+db.sqlite3
+db.sqlite3-shm
+db.sqlite3-wal
+*.sqlite3
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== 日志与本地工具状态 =====
+*.log
+.mimosa/
+
+# ===== 编辑器/系统 =====
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

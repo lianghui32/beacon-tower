@@ -1,0 +1,11 @@
+Django>=5.2
+psutil>=5.9            # 主机监控真实指标（CPU/内存/磁盘/网络/进程）；未安装时自动降级为模拟指标
+faker>=20.0            # init_data 生成更真实的中文演示数据（可选，未安装自动用内置词库）
+cryptography>=42.0     # SMTP 授权码等敏感配置的加密存储（ops/crypto.py；未安装时退回明文并打日志）
+
+# ---- 可选依赖（取消注释即启用，代码中均为 try-import，未安装自动跳过）----
+# django-debug-toolbar      # SQL/请求级调试面板（开发环境推荐）
+# silk                      # 请求级性能剖析工具
+# django-prometheus         # 完整版 Prometheus 指标（本项目已内置简版 /metrics，可不装）
+# geoip2                    # 真实 IP 归属地（需把 GeoLite2-City.mmdb 放项目根目录）
+# qqwry-py3                 # 纯真 IP 库（需把 qqwry.dat 放项目根目录）

@@ -345,14 +345,23 @@ class MetricBufferThreadTests(TransactionTestCase):
         self.assertTrue(self.buffer.start(), '缓冲开启时 start 应拉起 flusher 线程')
         for i in range(7):
             self.buffer.submit(dict(payload, path=f'/buf-thread/{i}'))
+        # 轮询要容忍"写入方正在事务里"：共享缓存的内存 SQLite 下，flusher 的批量事务
+        # 会锁住表，主线程的 count() 直接抛 table is locked（Linux CI 实测撞上，
+        # Windows 时序不同碰不上）——这是测试的并发缺陷，不是缓冲逻辑的问题。
+        from django.db import connection
+        from django.db.utils import OperationalError
         deadline = _time.monotonic() + 10
+        seen = 0
         while _time.monotonic() < deadline:
-            if RequestMetric.objects.filter(path__startswith='/buf-thread/').count() == 7:
+            try:
+                seen = RequestMetric.objects.filter(path__startswith='/buf-thread/').count()
+            except OperationalError:
+                seen = -1
+                connection.close()  # 下一轮换新连接再问
+            if seen == 7:
                 break
             _time.sleep(0.1)
-        self.assertEqual(
-            RequestMetric.objects.filter(path__startswith='/buf-thread/').count(), 7,
-            'flusher 线程应在刷新周期内自动批量落库')
+        self.assertEqual(seen, 7, 'flusher 线程应在刷新周期内自动批量落库')
         used = self.buffer.stats()['batches'] - batches_before
         self.assertLess(used, 7, f'7 条点用了 {used} 批，未体现批量写入')
 

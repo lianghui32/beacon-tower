@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}RUM 页面性能 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>页面性能</h1>
+  <span class="desc">TTFB / DOMReady / Load / FP / FCP / LCP 分位统计</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="perf" %}
+
+<div class="card">
+  <h2>加载耗时趋势（每分钟均值）</h2>
+  <div id="ch-trend" class="chart"></div>
+</div>
+
+<div class="card">
+  <h2>各阶段分位统计 (ms)</h2>
+  <table>
+    <thead><tr>
+      <th>阶段</th><th>样本数</th><th>均值</th><th>P50</th><th>P75</th><th>P90</th><th>P95</th>
+    </tr></thead>
+    <tbody id="stat-body"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>各页面平均加载时长</h2>
+  <div id="ch-pages" class="chart sm"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var LABELS = {
+    ttfb_ms: 'TTFB（首字节）', dom_ready_ms: 'DOMReady', load_ms: '完整加载',
+    fp_ms: 'FP 首次绘制', fcp_ms: 'FCP 首次内容绘制', lcp_ms: 'LCP 最大内容绘制',
+  };
+  var chTrend = mkChart('ch-trend'), chPages = mkChart('ch-pages');
+  function refresh() {
+    obsGet('/rum/api/perf/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      var tb = document.getElementById('stat-body');
+      tb.innerHTML = Object.keys(LABELS).map(function (k) {
+        var s = d.stats[k] || {};
+        return '<tr><td><b>' + LABELS[k] + '</b></td><td>' + (s.n || 0)
+          + '</td><td>' + (s.avg || 0) + '</td><td>' + (s.p50 || 0) + '</td><td>' + (s.p75 || 0)
+          + '</td><td>' + (s.p90 || 0) + '</td><td>' + (s.p95 || 0) + '</td></tr>';
+      }).join('');
+      chTrend.setOption(lineOption([
+        { name: '加载时长 ms', x: d.load_trend.map(p => p.t), y: d.load_trend.map(p => p.v), area: true },
+      ]));
+      chPages.setOption(barOption(d.by_page.map(p => p.page || '/'),
+        d.by_page.map(p => p.avg), { rotate: 20 }));
+    }).catch(function () {});
+  }
+  poll(refresh, 15000);
+</script>
+{% endblock %}

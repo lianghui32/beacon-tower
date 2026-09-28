@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}RUM 静态资源 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>静态资源</h1>
+  <span class="desc">Resource Timing：脚本 / 样式 / 图片的加载耗时与体积</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="resources" %}
+
+<div class="card">
+  <h2>按资源类型聚合</h2>
+  <div id="ch-type" class="chart sm"></div>
+</div>
+
+<div class="card">
+  <h2>最慢资源明细</h2>
+  <table>
+    <thead><tr><th>类型</th><th>资源地址</th><th>耗时 (ms)</th><th>大小 (KB)</th><th>时间</th></tr></thead>
+    <tbody id="res-body"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chType = mkChart('ch-type');
+  function refresh() {
+    obsGet('/rum/api/resources/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      chType.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['条数', '平均耗时 ms'] },
+        grid: { left: 50, right: 50, top: 40, bottom: 30 },
+        xAxis: { type: 'category', data: d.by_type.map(t => t.type) },
+        yAxis: [{ type: 'value', name: '条数' }, { type: 'value', name: 'ms' }],
+        series: [
+          { name: '条数', type: 'bar', data: d.by_type.map(t => t.n), itemStyle: { color: '#2563eb' }, barMaxWidth: 40 },
+          { name: '平均耗时 ms', type: 'line', yAxisIndex: 1, data: d.by_type.map(t => t.avg), itemStyle: { color: '#f59e0b' } },
+        ],
+      });
+      document.getElementById('res-body').innerHTML = d.slowest.length ? d.slowest.map(function (r) {
+        return '<tr><td><span class="tag low">' + esc(r.type) + '</span></td>'
+          + '<td style="font-size:12px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+          + esc(r.url) + '</td><td><b>' + r.dur + '</b></td><td>' + (r.size || 0) + '</td><td>' + esc(r.time) + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="muted">暂无数据（访问论坛页面后可见）</td></tr>';
+    }).catch(function () {});
+  }
+  poll(refresh, 15000);
+</script>
+{% endblock %}

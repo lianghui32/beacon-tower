@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}RUM 数据总览 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>前端性能监控 · 数据总览</h1>
+  <span class="desc">自研 rum.js 采集 · 真实用户视角</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="overview" %}
+
+<div class="cards">
+  <div class="stat"><div class="num" id="s-pv">-</div><div class="label">PV（页面访问）</div></div>
+  <div class="stat"><div class="num" id="s-uv">-</div><div class="label">UV（独立会话）</div></div>
+  <div class="stat"><div class="num" id="s-load">-</div><div class="label">平均加载时长 (ms)</div></div>
+  <div class="stat"><div class="num warn" id="s-err">-</div><div class="label">JS 错误数</div></div>
+  <div class="stat"><div class="num" id="s-api">-</div><div class="label">API 调用数</div></div>
+  <div class="stat"><div class="num warn" id="s-apier">-</div><div class="label">API 错误率 (%)</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card"><h2>PV 趋势</h2><div id="ch-pv" class="chart"></div></div>
+  <div class="card"><h2>终端分布（浏览器/系统）</h2><div id="ch-dev" class="chart"></div></div>
+</div>
+
+<div class="card">
+  <h2>Top 访问页面</h2>
+  <div id="ch-pages" class="chart sm"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chPv = mkChart('ch-pv'), chDev = mkChart('ch-dev'), chPages = mkChart('ch-pages');
+  function refresh() {
+    obsGet('/rum/api/overview/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      var s = d.summary;
+      document.getElementById('s-pv').textContent = s.pv;
+      document.getElementById('s-uv').textContent = s.uv;
+      document.getElementById('s-load').textContent = s.avg_load_ms;
+      document.getElementById('s-err').textContent = s.js_errors;
+      document.getElementById('s-api').textContent = s.api_calls;
+      document.getElementById('s-apier').textContent = s.api_error_rate;
+      chPv.setOption(lineOption([
+        { name: 'PV/分钟', x: d.pv_trend.map(p => p.t), y: d.pv_trend.map(p => p.v), area: true },
+      ]));
+      chDev.setOption(pieOption(d.devices.map(x => ({ name: x.name, value: x.n }))));
+      chPages.setOption(barOption(d.top_pages.map(p => p.page.split('?')[0].slice(-40)),
+        d.top_pages.map(p => p.n), { rotate: 18 }));
+    }).catch(function () {});
+  }
+  poll(refresh, 10000);
+</script>
+{% endblock %}

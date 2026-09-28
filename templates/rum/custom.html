@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}RUM 自定义上报 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>自定义上报</h1>
+  <span class="desc">业务埋点：window.obsRum('事件名', {任意 JSON})</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="custom" %}
+
+<div class="card">
+  <h2>事件计数</h2>
+  <div id="ch-count" class="chart sm"></div>
+</div>
+
+<div class="card">
+  <h2>最近上报明细</h2>
+  <table>
+    <thead><tr><th style="width:140px;">事件名</th><th>负载</th><th style="width:180px;">页面</th><th style="width:130px;">时间</th></tr></thead>
+    <tbody id="latest-body"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chCount = mkChart('ch-count');
+  function refresh() {
+    obsGet('/rum/api/custom/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      chCount.setOption(barOption(d.counts.map(c => c.name), d.counts.map(c => c.n),
+        { rotate: 15, bottom: 40 }));
+      document.getElementById('latest-body').innerHTML = d.latest.length ? d.latest.map(function (e) {
+        return '<tr><td><code class="inline">' + esc(e.name) + '</code></td>'
+          + '<td style="font-size:12px;">' + esc(e.payload.slice(0, 160)) + '</td>'
+          + '<td style="font-size:12px;">' + esc(e.page) + '</td><td>' + esc(e.time) + '</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="muted">暂无自定义事件（论坛页面里有演示埋点）</td></tr>';
+    }).catch(function () {});
+  }
+  poll(refresh, 15000);
+</script>
+{% endblock %}

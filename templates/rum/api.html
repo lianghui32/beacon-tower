@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}RUM API 监控 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>API 监控</h1>
+  <span class="desc">自动包装 fetch / XHR，从用户视角监控每个接口</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="api" %}
+
+<div class="card">
+  <h2>前端 API 耗时趋势</h2>
+  <div id="ch-trend" class="chart sm"></div>
+</div>
+
+<div class="card">
+  <h2>按接口聚合</h2>
+  <table>
+    <thead><tr>
+      <th>接口</th><th>调用次数</th><th>平均耗时 (ms)</th><th>P95 (ms)</th><th>错误率 (%)</th><th>状态码分布</th>
+    </tr></thead>
+    <tbody id="api-body"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>最慢调用明细</h2>
+  <table>
+    <thead><tr><th>时间</th><th>接口</th><th>状态码</th><th>耗时 (ms)</th><th>结果</th></tr></thead>
+    <tbody id="slow-body"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chTrend = mkChart('ch-trend');
+  function refresh() {
+    obsGet('/rum/api/calls/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      chTrend.setOption(lineOption([
+        { name: 'API 平均耗时 ms', x: d.trend.map(p => p.t), y: d.trend.map(p => p.v), area: true },
+      ]));
+      document.getElementById('api-body').innerHTML = d.rows.length ? d.rows.map(function (r) {
+        var st = Object.keys(r.statuses).map(function (k) {
+          return '<span class="tag ' + (k >= 400 || k === '0' ? 'high' : 'ok') + '">' + k + '×' + r.statuses[k] + '</span>';
+        }).join(' ');
+        return '<tr><td><code class="inline">' + esc(r.api.slice(0, 80)) + '</code></td><td>' + r.n
+          + '</td><td><b>' + r.avg + '</b></td><td>' + r.p95 + '</td><td>'
+          + (r.error_rate > 0 ? '<span class="tag high">' + r.error_rate + '</span>' : '0')
+          + '</td><td>' + st + '</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="muted">暂无数据（访问论坛页面产生前端请求后可见）</td></tr>';
+      document.getElementById('slow-body').innerHTML = d.slowest.length ? d.slowest.map(function (r) {
+        return '<tr><td>' + esc(r.time) + '</td><td><code class="inline">' + esc(r.api) + '</code></td>'
+          + '<td>' + r.status + '</td><td><b>' + r.dur + '</b></td>'
+          + '<td>' + (r.ok ? '<span class="tag ok">成功</span>' : '<span class="tag high">失败</span>') + '</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="muted">暂无数据</td></tr>';
+    }).catch(function () {});
+  }
+  poll(refresh, 10000);
+</script>
+{% endblock %}

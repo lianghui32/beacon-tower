@@ -1,0 +1,8 @@
+<div class="tabs">
+  <a href="/rum/" {% if tab == 'overview' %}class="active"{% endif %}>数据总览</a>
+  <a href="/rum/perf/" {% if tab == 'perf' %}class="active"{% endif %}>页面性能</a>
+  <a href="/rum/errors/" {% if tab == 'errors' %}class="active"{% endif %}>异常分析</a>
+  <a href="/rum/api/" {% if tab == 'api' %}class="active"{% endif %}>API 监控</a>
+  <a href="/rum/resources/" {% if tab == 'resources' %}class="active"{% endif %}>静态资源</a>
+  <a href="/rum/custom/" {% if tab == 'custom' %}class="active"{% endif %}>自定义上报</a>
+</div>

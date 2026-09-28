@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}RUM 异常分析 · 前端性能监控{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>异常分析</h1>
+  <span class="desc">JS 运行时错误捕获（onerror + unhandledrejection）</span>
+  <div class="spacer"></div>
+  <div class="range-slot" data-minutes="{{ minutes }}"></div>
+</div>
+{% include "rum/nav.html" with tab="errors" %}
+
+<div class="cards">
+  <div class="stat"><div class="num warn" id="s-err">-</div><div class="label">错误总数</div></div>
+  <div class="stat"><div class="num" id="s-group">-</div><div class="label">错误模式数（按消息归并）</div></div>
+</div>
+
+<div class="grid2" style="margin-top:18px;">
+  <div class="card"><h2>错误趋势</h2><div id="ch-trend" class="chart sm"></div></div>
+  <div class="card"><h2>Top 错误（按消息归并）</h2>
+    <table>
+      <thead><tr><th style="width:60px;">次数</th><th>错误消息</th><th style="width:130px;">最近出现</th></tr></thead>
+      <tbody id="group-body"><tr><td colspan="3" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>最近错误明细（含堆栈）</h2>
+  <div id="latest-box"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var chTrend = mkChart('ch-trend');
+  function refresh() {
+    obsGet('/rum/api/errors/?minutes=' + getParam('minutes', 60)).then(function (d) {
+      document.getElementById('s-err').textContent = d.total;
+      document.getElementById('s-group').textContent = d.groups.length;
+      chTrend.setOption(lineOption([
+        { name: '错误数/分钟', x: d.trend.map(p => p.t), y: d.trend.map(p => p.v), color: '#dc2626', area: true },
+      ]));
+      document.getElementById('group-body').innerHTML = d.groups.length
+        ? d.groups.map(function (g) {
+            return '<tr><td><span class="tag high">' + g.n + '</span></td><td style="font-size:12px;">'
+              + esc(g.message.slice(0, 80)) + '</td><td>' + esc(g.last) + '</td></tr>';
+          }).join('') : '<tr><td colspan="3" class="muted">暂无错误 🎉</td></tr>';
+      document.getElementById('latest-box').innerHTML = d.latest.length
+        ? d.latest.map(function (e) {
+            return '<pre style="margin-bottom:12px;">[' + esc(e.time) + '] '
+              + esc(e.page) + '\n' + esc(e.device) + '\n' + esc(e.message) + '\n'
+              + esc((e.stack || '（无堆栈）').slice(0, 600)) + '</pre>';
+          }).join('') : '<p class="muted">暂无错误明细</p>';
+    }).catch(function () {});
+  }
+  poll(refresh, 10000);
+</script>
+{% endblock %}

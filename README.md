@@ -40,6 +40,9 @@
 **[拨测监控](docs/screenshots/probe.png)**、**[清理加速中心](docs/screenshots/cleaner.png)**
 （后两张是 staff 专属页面，截图取自侧边栏改版前）。
 
+改版后想重跑这套图：`node scripts/shoot_docs.mjs`（零依赖，Node ≥ 22 + 本机 Chrome，
+登录用的是登录页公开的只读演示账号；`only dashboard geo` 可只重拍指定几张）。
+
 ## 一、项目背景（从"性能监控"到"可观测平台"）
 
 本项目前身是一个 Django 性能监控与优化平台（内置问题论坛 + AST 诊断），解决的是

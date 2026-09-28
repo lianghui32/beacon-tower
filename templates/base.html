@@ -36,6 +36,10 @@
     .nav-sec.flat > .nav-group:hover { color: #5d7288; }
     .nav-sec.flat .nav-links { display: block; }
     .nav-sec.flat .nav-links a { padding-top: 2px; padding-bottom: 2px; }
+    /* 组名与唯一条目同义（总览→监控总览、基础监控→主机监控…）时合成一行：
+       标题与条目两行说同一件事，只会让侧栏变长、还得多读一行 */
+    .nav-sec.solo { margin: 2px 0; }
+    .nav-sec.solo > a { color: #c3cfdb; padding: 8px 20px; }
     .sidebar a { display: block; color: #aeb9c6; text-decoration: none; font-size: 13px;
       padding: 7px 20px; border-left: 3px solid transparent; }
     .sidebar a:hover { color: #fff; background: var(--navhover); }
@@ -136,14 +140,8 @@
     <div class="demo-badge">🎁 演示模式 · 只读</div>
     {% endif %}
 
-    <div class="nav-sec" data-g="overview">
-      <div class="nav-group" onclick="toggleNavGroup(this)">总览<span class="chev">▾</span></div>
-      <div class="nav-links"><a href="/">监控总览</a></div>
-    </div>
-    <div class="nav-sec" data-g="host">
-      <div class="nav-group" onclick="toggleNavGroup(this)">基础监控<span class="chev">▾</span></div>
-      <div class="nav-links"><a href="/hosts/">主机监控</a></div>
-    </div>
+    <div class="nav-sec solo" data-g="overview"><a href="/">监控总览</a></div>
+    <div class="nav-sec solo" data-g="host"><a href="/hosts/">主机监控</a></div>
     <div class="nav-sec" data-g="apm">
       <div class="nav-group" onclick="toggleNavGroup(this)">应用性能监控 APM<span class="chev">▾</span></div>
       <div class="nav-links">
@@ -163,14 +161,8 @@
         <a href="/rum/custom/">自定义上报</a>
       </div>
     </div>
-    <div class="nav-sec" data-g="log">
-      <div class="nav-group" onclick="toggleNavGroup(this)">日志服务<span class="chev">▾</span></div>
-      <div class="nav-links"><a href="/logs/">日志查询</a></div>
-    </div>
-    <div class="nav-sec" data-g="geo">
-      <div class="nav-group" onclick="toggleNavGroup(this)">访问分析<span class="chev">▾</span></div>
-      <div class="nav-links"><a href="/analytics/geo/">IP 访问地图</a></div>
-    </div>
+    <div class="nav-sec solo" data-g="log"><a href="/logs/">日志查询</a></div>
+    <div class="nav-sec solo" data-g="geo"><a href="/analytics/geo/">IP 访问地图</a></div>
     <div class="nav-sec" data-g="alert">
       <div class="nav-group" onclick="toggleNavGroup(this)">告警中心<span class="chev">▾</span></div>
       <div class="nav-links">
@@ -201,10 +193,7 @@
         <a href="/analytics/report/">报表中心</a>
       </div>
     </div>
-    <div class="nav-sec" data-g="viz">
-      <div class="nav-group" onclick="toggleNavGroup(this)">可视化<span class="chev">▾</span></div>
-      <div class="nav-links"><a href="/monitor/dashboard/">自定义大盘</a></div>
-    </div>
+    <div class="nav-sec solo" data-g="viz"><a href="/monitor/dashboard/">自定义大盘</a></div>
     <div class="nav-sec" data-g="access">
       <div class="nav-group" onclick="toggleNavGroup(this)">接入与演练<span class="chev">▾</span></div>
       <div class="nav-links">
@@ -258,7 +247,8 @@
       // 分组可见条目数要在渲染后数：演示账号下部分入口不显示，
       // 同一分组对管理员可能是 4 项、对演示用户只剩 1 项
       secs.forEach(function (s) {
-        if (s.querySelectorAll('.nav-links a').length <= 1) s.classList.add('flat');
+        if (s.querySelector('.nav-group')
+            && s.querySelectorAll('.nav-links a').length <= 1) s.classList.add('flat');
       });
       var saved = null;
       try { saved = localStorage.getItem('obs-nav-collapsed'); } catch (e) {}
